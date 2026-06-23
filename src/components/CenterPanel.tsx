@@ -4,6 +4,7 @@ import { canvases, comments, resources, type Canvas, type Comment } from '../dat
 import { Avatar, CopyLinkButton, IconButton, TabButton } from './Primitives'
 import { useLocalStorage } from '../hooks/useLocalStorage'
 import { CloudinaryMediaStorage } from '../services/media'
+import DiscordIdentity from './DiscordIdentity'
 
 export default function CenterPanel() {
   const [tab, setTab] = useState<'notes' | 'resources'>('notes')
@@ -50,7 +51,7 @@ export default function CenterPanel() {
   return <main className="center-panel" id="top">
     <header className="canvas-header">
       <div className="breadcrumbs"><span>Research</span><span>/</span><strong>{activeCanvas.title}</strong><ChevronDown size={14} /></div>
-      <div className="header-actions"><span className="saved-state"><Check size={13} /> {saved ? 'Saved' : 'Saving…'}</span><button className="share-button" disabled={sharing} onClick={() => void share()}>{sharing ? 'Sharing…' : 'Share'} <ArrowUpRight size={15} /></button><IconButton label="More canvas options"><MoreHorizontal size={18} /></IconButton></div>
+      <div className="header-actions"><DiscordIdentity compact/><span className="saved-state"><Check size={13} /> {saved ? 'Saved' : 'Saving…'}</span><button className="share-button" disabled={sharing} onClick={() => void share()}>{sharing ? 'Sharing…' : 'Share'} <ArrowUpRight size={15} /></button><IconButton label="More canvas options"><MoreHorizontal size={18} /></IconButton></div>
     </header>
 
     <div className="document-head">

@@ -1,8 +1,9 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { Check, Copy, ExternalLink, MessageCircleReply, RefreshCw, Send, Unplug } from 'lucide-react'
 import { Virtuoso, type VirtuosoHandle } from 'react-virtuoso'
-import { getDeviceId } from '../services/api'
+import { getDeviceId, getGuestName } from '../services/api'
 import DiscordConnectModal from './DiscordConnectModal'
+import DiscordIdentity, { type DiscordUser } from './DiscordIdentity'
 
 type Message = {
   id: string; origin: 'website' | 'discord'; authorId: string; authorName: string; authorAvatar?: string;
@@ -20,6 +21,7 @@ export default function CanvasChat() {
   const [sending, setSending] = useState(false)
   const [error, setError] = useState('')
   const [discordLinked, setDiscordLinked] = useState(false)
+  const [identity, setIdentity] = useState<DiscordUser | null>(null)
   const [connectOpen, setConnectOpen] = useState(() => new URL(window.location.href).searchParams.has('discordConnect'))
   const list = useRef<VirtuosoHandle>(null)
   const byId = useMemo(() => new Map(messages.map((message) => [message.id, message])), [messages])
@@ -75,7 +77,7 @@ export default function CanvasChat() {
     try {
       const response = await fetch(`/api/canvases/${encodeURIComponent(canvas.id)}/messages`, {
         method: 'POST', headers: { 'content-type': 'application/json', 'x-fieldnotes-device': getDeviceId() },
-        body: JSON.stringify({ content: value, authorName: 'You', replyTo: replyTo?.id }),
+        body: JSON.stringify({ content: value, replyTo: replyTo?.id }),
       })
       const result = await response.json() as { message?: Message; error?: string }
       if (!response.ok || !result.message) throw new Error(result.error ?? 'Could not send message')
@@ -109,7 +111,11 @@ export default function CanvasChat() {
     }}/>
     {replyTo && <div className="flex items-center justify-between border-t border-rule bg-stone-100 px-3 py-1.5 text-[9px] text-stone-500"><span className="truncate">Replying to {replyTo.authorName}: {replyTo.content}</span><button className="border-0 bg-transparent" onClick={() => setReplyTo(undefined)}>×</button></div>}
     {error && <div role="alert" className="flex items-center gap-1 px-3 py-1 text-[9px] text-red-700"><Unplug size={10}/>{error}</div>}
-    <form className="m-3 rounded-lg border border-stone-300 bg-white p-2" onSubmit={(event) => { event.preventDefault(); void send() }}>
+    <div className="flex items-center justify-between border-t border-rule px-3 pt-2">
+      <span className="text-[9px] text-stone-400">Posting as {identity?.displayName ?? getGuestName()}</span>
+      <DiscordIdentity compact onChange={setIdentity}/>
+    </div>
+    <form className="m-3 mt-2 rounded-lg border border-stone-300 bg-white p-2" onSubmit={(event) => { event.preventDefault(); void send() }}>
       <textarea className="h-14 w-full resize-none border-0 bg-transparent text-[11px] outline-none" maxLength={2000} placeholder="Message this canvas and Discord…" value={content} onChange={(event) => setContent(event.target.value)}/>
       <div className="flex items-center justify-between"><span className="text-[8px] text-stone-400">{content.length}/2000</span><button className="grid size-7 place-items-center rounded-md border-0 bg-forest text-white disabled:opacity-40" disabled={!content.trim() || sending} aria-label="Send message"><Send size={13}/></button></div>
     </form>

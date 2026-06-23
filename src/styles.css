@@ -23,7 +23,7 @@
 }
 
 @layer components {
-  .app-shell { @apply relative mx-auto grid h-dvh max-w-[1920px] grid-cols-[286px_minmax(490px,1fr)_310px] bg-paper; }
+  .app-shell { @apply relative mx-auto grid h-dvh max-w-[1920px] bg-paper; grid-template-columns: var(--left-panel-width, 340px) minmax(0, 1fr) var(--right-panel-width, 360px); }
   .side-panel { @apply flex min-w-0 flex-col overflow-hidden bg-warm; }
   .left-panel { @apply border-r border-rule; }
   .right-panel { @apply border-l border-rule; }
@@ -73,6 +73,11 @@
   .header-actions { @apply ml-4 flex items-center gap-2.5; }
   .saved-state { @apply flex items-center gap-1 text-[10px] text-stone-400; }
   .share-button { @apply flex h-8 cursor-pointer items-center gap-1.5 rounded-lg border-0 bg-forest px-3 text-xs font-semibold text-white; }
+  .discord-signin { @apply inline-flex h-8 cursor-pointer items-center gap-1.5 rounded-lg border border-indigo-200 bg-indigo-50 px-2.5 text-[10px] font-semibold text-indigo-700; }
+  .discord-identity { @apply flex min-w-0 items-center gap-2 text-[10px]; }
+  .discord-identity > img, .discord-identity > span { @apply grid size-7 shrink-0 place-items-center rounded-full bg-indigo-100 object-cover text-[9px] font-bold text-indigo-700; }
+  .discord-identity > strong { @apply max-w-28 truncate; }
+  .discord-identity > button { @apply grid size-6 cursor-pointer place-items-center rounded-md border-0 bg-transparent text-stone-400 hover:bg-stone-100 hover:text-stone-700; }
   .document-head { @apply mx-auto mt-[52px] mb-[35px] w-[min(760px,calc(100%_-_72px))]; }
   .doc-kicker { @apply text-[9px] font-bold tracking-[.13em] text-stone-400; }
   .document-head h1 { @apply my-2.5 font-serif text-[clamp(36px,4vw,52px)] leading-[1.05] font-semibold tracking-[-.025em] text-ink; }
@@ -152,8 +157,15 @@
   .discord-preview span { @apply text-[10px] font-semibold text-indigo-500; } .discord-preview small { @apply mt-1 text-[8px] text-stone-400; }
   .discord-panel a { @apply inline-flex items-center gap-1 text-[10px] font-semibold text-forest; }
   .desktop-panel-toggle { @apply absolute top-[66px] z-40 hidden size-[25px] cursor-pointer place-items-center rounded-md border border-rule bg-paper text-stone-500; }
-  .left-toggle { @apply left-[274px]; } .right-toggle { @apply right-[298px]; } .app-shell:hover .desktop-panel-toggle { @apply grid; }
-  .app-shell.left-collapsed { @apply grid-cols-[0_minmax(490px,1fr)_310px]; } .app-shell.right-collapsed { @apply grid-cols-[286px_minmax(490px,1fr)_0]; }
+  .left-toggle { left: calc(var(--left-panel-width, 340px) - 12px); } .right-toggle { right: calc(var(--right-panel-width, 360px) - 12px); } .app-shell:hover .desktop-panel-toggle { @apply grid; }
+  .panel-resizer { @apply absolute inset-y-0 z-30 hidden w-2 cursor-col-resize touch-none; }
+  .panel-resizer::after { content: ''; @apply absolute inset-y-0 left-1/2 w-px bg-transparent; }
+  .panel-resizer:hover::after, .resizing-panels .panel-resizer::after { @apply bg-emerald-700/45; }
+  .left-resizer { left: calc(var(--left-panel-width, 340px) - 4px); } .right-resizer { right: calc(var(--right-panel-width, 360px) - 4px); }
+  .app-shell:hover .panel-resizer { @apply block; }
+  .resizing-panels { @apply cursor-col-resize select-none; }
+  .app-shell.left-collapsed { grid-template-columns: 0 minmax(0, 1fr) var(--right-panel-width, 360px); } .app-shell.right-collapsed { grid-template-columns: var(--left-panel-width, 340px) minmax(0, 1fr) 0; }
+  .app-shell.left-collapsed.right-collapsed { grid-template-columns: 0 minmax(0, 1fr) 0; }
   .app-shell.left-collapsed .left-panel, .app-shell.right-collapsed .right-panel { @apply invisible; }
   .app-shell.left-collapsed .left-toggle { @apply left-1.5 rotate-180; } .app-shell.right-collapsed .right-toggle { @apply right-1.5 rotate-180; }
   .mobile-nav { @apply hidden; }

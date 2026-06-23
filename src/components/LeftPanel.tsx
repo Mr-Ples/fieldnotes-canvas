@@ -85,7 +85,7 @@ function ChatPanel() {
   }
   return <div className="chat-panel">
     <div className="chat-heading"><div><span className="eyebrow">Current chat</span><h3>Attention as a material</h3></div><IconButton label="New chat" onClick={() => setMessages([])}><Plus size={18} /></IconButton></div>
-    <div className="model-pill"><Bot size={14} /> OpenRouter Auto <ChevronDown size={13} /></div>
+    <div className="model-pill"><Bot size={14} /> OpenRouter Free Router <ChevronDown size={13} /></div>
     <div className="messages">
       {messages.map((item) => item.role === 'user'
         ? <div className="message message-user deep-link-target" id={`chat-${item.id}`} key={item.id}>{item.content}</div>

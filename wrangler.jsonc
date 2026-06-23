@@ -9,7 +9,7 @@
     "run_worker_first": ["/api/*"]
   },
   "vars": {
-    "OPENROUTER_MODEL": "openrouter/auto",
+    "OPENROUTER_MODEL": "openrouter/free",
     "APP_NAME": "Fieldnotes"
   },
   "ratelimits": [

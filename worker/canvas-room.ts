@@ -174,22 +174,28 @@ export class DiscordChannelLink extends DurableObject<Env> {
 }
 
 export type DiscordGuild = { id: string; name: string; icon?: string | null; owner: boolean; permissions: string }
+export type DiscordUser = { id: string; username: string; displayName: string; avatar?: string }
 export class DiscordOAuthSession extends DurableObject<Env> {
-  private static readonly SESSION_KEYS = ['canvasId', 'expiresAt', 'userId', 'guilds']
+  private static readonly SESSION_KEYS = ['canvasId', 'expiresAt', 'user', 'guilds']
 
-  async start(canvasId: string) {
-    await this.ctx.storage.put({ canvasId, expiresAt: Date.now() + 15 * 60_000 })
+  async start(canvasId?: string) {
+    const pending: Record<string, string | number> = { expiresAt: Date.now() + 15 * 60_000 }
+    if (canvasId) pending.canvasId = canvasId
+    await this.ctx.storage.put(pending)
     await this.ctx.storage.setAlarm(Date.now() + 15 * 60_000)
   }
-  async complete(userId: string, guilds: DiscordGuild[]) {
-    await this.ctx.storage.put({ userId, guilds })
+  async complete(user: DiscordUser, guilds: DiscordGuild[]) {
+    const expiresAt = Date.now() + 30 * 24 * 60 * 60_000
+    await this.ctx.storage.put({ user, guilds, expiresAt })
+    await this.ctx.storage.setAlarm(expiresAt)
   }
   async getSession() {
-    const data = await this.ctx.storage.get(['canvasId', 'expiresAt', 'userId', 'guilds'])
+    const data = await this.ctx.storage.get(DiscordOAuthSession.SESSION_KEYS)
     const expiresAt = data.get('expiresAt') as number | undefined
     if (!expiresAt || expiresAt < Date.now()) return null
-    return { canvasId: data.get('canvasId') as string | undefined, userId: data.get('userId') as string | undefined, guilds: (data.get('guilds') as DiscordGuild[] | undefined) ?? [], expiresAt }
+    return { canvasId: data.get('canvasId') as string | undefined, user: data.get('user') as DiscordUser | undefined, guilds: (data.get('guilds') as DiscordGuild[] | undefined) ?? [], expiresAt }
   }
+  async destroy() { await this.ctx.storage.delete(DiscordOAuthSession.SESSION_KEYS) }
   async alarm() {
     // Avoid deleteAll() here: local workerd can contend on its SQLite-wide
     // deletion path while an alarm output gate is committing.

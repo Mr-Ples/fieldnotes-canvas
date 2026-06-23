@@ -10,6 +10,10 @@ export function getDeviceId() {
   return id
 }
 
+export function getGuestName() {
+  return `Guest-${getDeviceId().replaceAll('-', '').slice(0, 6).toUpperCase()}`
+}
+
 export async function completeChat(messages: ChatMessage[], signal?: AbortSignal) {
   const active = JSON.parse(localStorage.getItem('fieldnotes:active-canvas') ?? '{"id":"attention","title":"Designing for attention"}') as { id: string; title: string }
   const noteHtml = localStorage.getItem(`fieldnotes:notes-html:${active.id}`) ?? ''

@@ -1,5 +1,7 @@
 # Fieldnotes
 
+The research chat uses OpenRouter's `openrouter/free` router, which only selects from currently available free models. An OpenRouter API key is still required for access and rate limiting.
+
 ## 1. Create the Discord bot
 
 1. Open <https://discord.com/developers/applications> and select **New Application**.
@@ -135,6 +137,8 @@ npm run dev
 If the site is not running on port 5173, update `FIELDNOTES_API_URL` in the bridge `.env`.
 
 ## 4. Link a canvas to Discord
+
+Use **Sign in with Discord** in the site header to attach your Discord display name and avatar to messages sent from the website chat. The sign-in lasts for 30 days. Without Discord sign-in, the site uses a stable `Guest-XXXXXX` identity derived from the browser's locally stored device ID.
 
 1. Open the canvas’s **Chat · Discord** tab.
 2. Select **Connect Discord**.
