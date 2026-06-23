@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import { Check, Copy, ExternalLink, MessageCircleReply, RefreshCw, Send, Unplug } from 'lucide-react'
 import { Virtuoso, type VirtuosoHandle } from 'react-virtuoso'
 import { getDeviceId } from '../services/api'
+import DiscordConnectModal from './DiscordConnectModal'
 
 type Message = {
   id: string; origin: 'website' | 'discord'; authorId: string; authorName: string; authorAvatar?: string;
@@ -18,6 +19,8 @@ export default function CanvasChat() {
   const [connected, setConnected] = useState(false)
   const [sending, setSending] = useState(false)
   const [error, setError] = useState('')
+  const [discordLinked, setDiscordLinked] = useState(false)
+  const [connectOpen, setConnectOpen] = useState(() => new URL(window.location.href).searchParams.has('discordConnect'))
   const list = useRef<VirtuosoHandle>(null)
   const byId = useMemo(() => new Map(messages.map((message) => [message.id, message])), [messages])
 
@@ -58,8 +61,8 @@ export default function CanvasChat() {
     }
     void fetch(`/api/canvases/${encodeURIComponent(canvas.id)}/messages`).then(async (response) => {
       if (!response.ok) throw new Error('Could not load chat')
-      const result = await response.json() as { messages: Message[] }
-      if (!disposed) merge(result.messages)
+      const result = await response.json() as { messages: Message[]; discord?: { channelId: string } | null }
+      if (!disposed) { merge(result.messages); setDiscordLinked(Boolean(result.discord)) }
     }).catch((reason) => { if (!disposed) setError(reason instanceof Error ? reason.message : 'Could not load chat') })
     connect()
     return () => { disposed = true; clearTimeout(retry); socket?.close() }
@@ -86,6 +89,7 @@ export default function CanvasChat() {
   return <div className="flex min-h-0 flex-1 flex-col">
     <div className="border-b border-rule px-3 py-2.5">
       <div className="flex items-center justify-between"><span className="truncate text-[11px] font-semibold">{canvas.title}</span><span className={`flex items-center gap-1 text-[9px] ${connected ? 'text-emerald-700' : 'text-stone-400'}`}>{connected ? <Check size={11}/> : <RefreshCw size={11}/>} {connected ? 'Live' : 'Connecting'}</span></div>
+      <button className={`mt-2 w-full rounded-md border px-2 py-1.5 text-[9px] font-semibold ${discordLinked ? 'border-emerald-200 bg-emerald-50 text-emerald-800' : 'border-indigo-200 bg-indigo-50 text-indigo-700'}`} onClick={() => setConnectOpen(true)}>{discordLinked ? 'Discord connected · Change channel' : 'Connect Discord'}</button>
       <button className="mt-1 flex items-center gap-1 border-0 bg-transparent p-0 text-[9px] text-stone-400" onClick={() => void navigator.clipboard.writeText(canvas.id)} title="Copy canvas ID"><Copy size={10}/> Canvas ID: {canvas.id}</button>
     </div>
     <Virtuoso ref={list} className="min-h-0 flex-1" data={messages} followOutput="smooth" itemContent={(_, message) => {
@@ -109,6 +113,7 @@ export default function CanvasChat() {
       <textarea className="h-14 w-full resize-none border-0 bg-transparent text-[11px] outline-none" maxLength={2000} placeholder="Message this canvas and Discord…" value={content} onChange={(event) => setContent(event.target.value)}/>
       <div className="flex items-center justify-between"><span className="text-[8px] text-stone-400">{content.length}/2000</span><button className="grid size-7 place-items-center rounded-md border-0 bg-forest text-white disabled:opacity-40" disabled={!content.trim() || sending} aria-label="Send message"><Send size={13}/></button></div>
     </form>
+    <DiscordConnectModal canvasId={canvas.id} open={connectOpen} onClose={() => setConnectOpen(false)} onLinked={() => setDiscordLinked(true)}/>
   </div>
 }
 

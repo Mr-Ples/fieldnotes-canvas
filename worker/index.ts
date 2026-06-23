@@ -1,6 +1,6 @@
 import { DurableObject } from 'cloudflare:workers'
-import type { DiscordEvent } from './canvas-room'
-export { CanvasRoom, DiscordChannelLink } from './canvas-room'
+import type { DiscordEvent, DiscordGuild } from './canvas-room'
+export { CanvasRoom, DiscordChannelLink, DiscordOAuthSession } from './canvas-room'
 
 const JSON_HEADERS = { 'content-type': 'application/json; charset=utf-8', 'cache-control': 'no-store' }
 const MAX_JSON_BYTES = 64_000
@@ -32,6 +32,12 @@ export default {
       if (url.pathname === '/api/shares' && request.method === 'POST') return await createShare(request, env)
       if (url.pathname.startsWith('/api/shares/') && request.method === 'GET') return await readShare(url, env)
       if (url.pathname === '/api/health' && request.method === 'GET') return json({ ok: true })
+      if (url.pathname === '/api/discord/connect' && request.method === 'GET') return await startDiscordOAuth(request, env)
+      if (url.pathname === '/api/discord/callback' && request.method === 'GET') return await finishDiscordOAuth(request, env)
+      if (url.pathname === '/api/discord/connect/session' && request.method === 'GET') return await discordConnectSession(request, env)
+      const discordChannels = url.pathname.match(/^\/api\/discord\/connect\/guilds\/(\d{15,22})\/channels$/)
+      if (discordChannels && request.method === 'GET') return await discordGuildChannels(request, env, discordChannels[1])
+      if (url.pathname === '/api/discord/connect/link' && request.method === 'POST') return await linkDiscordFromBrowser(request, env)
       const canvasRoute = url.pathname.match(/^\/api\/canvases\/([^/]+)\/(messages|chat)$/)
       if (canvasRoute) return await canvasChat(request, env, decodeURIComponent(canvasRoute[1]), canvasRoute[2], actor)
       if (url.pathname === '/api/internal/discord/link' && request.method === 'POST') return await linkDiscordChannel(request, env)
@@ -93,7 +99,8 @@ async function canvasChat(request: Request, env: Env, canvasId: string, action: 
   }
   if (request.method === 'GET') {
     const before = Number(new URL(request.url).searchParams.get('before')) || undefined
-    return json({ messages: await room.listMessages(50, before) })
+    const [messages, discord] = await Promise.all([room.listMessages(50, before), room.getDiscordChannel()])
+    return json({ messages, discord })
   }
   if (request.method !== 'POST') return json({ error: 'Method not allowed' }, 405)
   const body = await readJson<{ content?: string; authorName?: string; replyTo?: string }>(request)
@@ -114,15 +121,131 @@ async function canvasChat(request: Request, env: Env, canvasId: string, action: 
 async function linkDiscordChannel(request: Request, env: Env) {
   const body = await verifiedBridgeJson<{ canvasId?: string; channelId?: string; guildId?: string }>(request, env)
   if (!body.canvasId || !body.channelId || !body.guildId || !/^[a-zA-Z0-9_-]{1,100}$/.test(body.canvasId) || !/^\d{15,22}$/.test(body.channelId) || !/^\d{15,22}$/.test(body.guildId)) return json({ error: 'Invalid link request' }, 400)
-  const room = env.CANVAS_ROOMS.getByName(body.canvasId)
-  const channel = env.DISCORD_CHANNELS.getByName(body.channelId)
-  const [previousChannel, previousCanvas] = await Promise.all([room.getDiscordChannel(), channel.getCanvas()])
-  if (previousChannel && previousChannel.channelId !== body.channelId) await env.DISCORD_CHANNELS.getByName(previousChannel.channelId).clearCanvas(body.canvasId)
-  if (previousCanvas && previousCanvas !== body.canvasId) await env.CANVAS_ROOMS.getByName(previousCanvas).clearDiscordChannel(body.channelId)
-  await room.setDiscordChannel(body.channelId, body.guildId)
-  await channel.setCanvas(body.canvasId)
+  await setDiscordMapping(env, body.canvasId, body.channelId, body.guildId)
   return json({ linked: true })
 }
+
+async function setDiscordMapping(env: Env, canvasId: string, channelId: string, guildId: string) {
+  const room = env.CANVAS_ROOMS.getByName(canvasId)
+  const channel = env.DISCORD_CHANNELS.getByName(channelId)
+  const [previousChannel, previousCanvas] = await Promise.all([room.getDiscordChannel(), channel.getCanvas()])
+  if (previousChannel && previousChannel.channelId !== channelId) await env.DISCORD_CHANNELS.getByName(previousChannel.channelId).clearCanvas(canvasId)
+  if (previousCanvas && previousCanvas !== canvasId) await env.CANVAS_ROOMS.getByName(previousCanvas).clearDiscordChannel(channelId)
+  await room.setDiscordChannel(channelId, guildId)
+  await channel.setCanvas(canvasId)
+}
+
+const OAUTH_COOKIE = 'fieldnotes_discord_connect'
+
+async function startDiscordOAuth(request: Request, env: Env) {
+  if (!env.DISCORD_CLIENT_ID || !env.DISCORD_CLIENT_SECRET || !env.DISCORD_OAUTH_REDIRECT_URI) return json({ error: 'Discord OAuth is not configured' }, 503)
+  const canvasId = new URL(request.url).searchParams.get('canvasId') ?? ''
+  if (!/^[a-zA-Z0-9_-]{1,100}$/.test(canvasId)) return json({ error: 'Invalid canvas' }, 400)
+  const state = crypto.randomUUID()
+  await env.DISCORD_OAUTH.getByName(state).start(canvasId)
+  const authorize = new URL('https://discord.com/oauth2/authorize')
+  authorize.search = new URLSearchParams({ response_type: 'code', client_id: env.DISCORD_CLIENT_ID, scope: 'identify guilds', state, redirect_uri: env.DISCORD_OAUTH_REDIRECT_URI }).toString()
+  return new Response(null, { status: 302, headers: { location: authorize.toString(), 'set-cookie': oauthCookie(state, request) } })
+}
+
+async function finishDiscordOAuth(request: Request, env: Env) {
+  const url = new URL(request.url)
+  const state = url.searchParams.get('state') ?? ''
+  const code = url.searchParams.get('code') ?? ''
+  if (!/^[0-9a-f-]{36}$/.test(state) || !code || code.length > 1_000 || cookieValue(request, OAUTH_COOKIE) !== state) return json({ error: 'Invalid OAuth state' }, 400)
+  const session = env.DISCORD_OAUTH.getByName(state)
+  const pending = await session.getSession()
+  if (!pending?.canvasId) return json({ error: 'OAuth session expired' }, 400)
+
+  const tokenResponse = await fetch('https://discord.com/api/v10/oauth2/token', {
+    method: 'POST', headers: { 'content-type': 'application/x-www-form-urlencoded' }, signal: AbortSignal.timeout(15_000),
+    body: new URLSearchParams({ client_id: env.DISCORD_CLIENT_ID, client_secret: env.DISCORD_CLIENT_SECRET, grant_type: 'authorization_code', code, redirect_uri: env.DISCORD_OAUTH_REDIRECT_URI }),
+  })
+  if (!tokenResponse.ok) return json({ error: 'Discord authorization failed' }, 502)
+  const token = JSON.parse(await readBoundedText(tokenResponse, 64_000)) as { access_token?: string }
+  if (!token.access_token) return json({ error: 'Discord returned no access token' }, 502)
+  const headers = { authorization: `Bearer ${token.access_token}` }
+  const [userResponse, guildResponse] = await Promise.all([
+    fetch('https://discord.com/api/v10/users/@me', { headers, signal: AbortSignal.timeout(15_000) }),
+    fetch('https://discord.com/api/v10/users/@me/guilds?limit=200', { headers, signal: AbortSignal.timeout(15_000) }),
+  ])
+  if (!userResponse.ok || !guildResponse.ok) return json({ error: 'Discord account data could not be loaded' }, 502)
+  const user = JSON.parse(await readBoundedText(userResponse, 64_000)) as { id?: string }
+  const guilds = JSON.parse(await readBoundedText(guildResponse, 512_000)) as DiscordGuild[]
+  if (!user.id || !Array.isArray(guilds)) return json({ error: 'Discord returned invalid account data' }, 502)
+  await session.complete(user.id, guilds.filter(canManageGuild).map(({ id, name, icon, owner, permissions }) => ({ id, name, icon, owner, permissions })))
+  const destination = new URL('/', url.origin)
+  destination.searchParams.set('discordConnect', state)
+  destination.searchParams.set('canvas', pending.canvasId)
+  return new Response(null, { status: 302, headers: { location: destination.toString(), 'set-cookie': oauthCookie(state, request) } })
+}
+
+async function discordConnectSession(request: Request, env: Env) {
+  const sessionId = new URL(request.url).searchParams.get('session') ?? ''
+  const session = await authorizedOAuthSession(request, env, sessionId)
+  return json({ canvasId: session.canvasId, guilds: session.guilds })
+}
+
+async function discordGuildChannels(request: Request, env: Env, guildId: string) {
+  const sessionId = new URL(request.url).searchParams.get('session') ?? ''
+  const session = await authorizedOAuthSession(request, env, sessionId)
+  if (!session.guilds.some((guild) => guild.id === guildId && canManageGuild(guild))) return json({ error: 'You cannot manage this server' }, 403)
+  const headers = { authorization: `Bot ${env.DISCORD_BOT_TOKEN}` }
+  const [channelsResponse, threadsResponse] = await Promise.all([
+    fetch(`https://discord.com/api/v10/guilds/${guildId}/channels`, { headers, signal: AbortSignal.timeout(15_000) }),
+    fetch(`https://discord.com/api/v10/guilds/${guildId}/threads/active`, { headers, signal: AbortSignal.timeout(15_000) }),
+  ])
+  if (channelsResponse.status === 403 || channelsResponse.status === 404) return json({ botMissing: true, inviteUrl: discordBotInvite(env.DISCORD_CLIENT_ID, guildId) }, 424)
+  if (!channelsResponse.ok) return json({ error: 'Discord channels could not be loaded' }, 502)
+  const channels = JSON.parse(await readBoundedText(channelsResponse, 1_000_000)) as DiscordChannel[]
+  const active = threadsResponse.ok ? JSON.parse(await readBoundedText(threadsResponse, 1_000_000)) as { threads?: DiscordChannel[] } : { threads: [] }
+  const selectable = [...channels.filter((channel) => channel.type === 0 || channel.type === 5), ...(active.threads ?? []).filter((channel) => [10, 11, 12].includes(channel.type))]
+    .map(({ id, name, type, parent_id }) => ({ id, name: name || 'Unnamed channel', type, parentId: parent_id }))
+  return json({ channels: selectable, inviteUrl: discordBotInvite(env.DISCORD_CLIENT_ID, guildId) })
+}
+
+async function linkDiscordFromBrowser(request: Request, env: Env) {
+  const body = await readJson<{ session?: string; canvasId?: string; guildId?: string; channelId?: string }>(request)
+  if (!body.session || !body.canvasId || !body.guildId || !body.channelId) return json({ error: 'Missing link information' }, 400)
+  const session = await authorizedOAuthSession(request, env, body.session)
+  if (session.canvasId !== body.canvasId || !session.guilds.some((guild) => guild.id === body.guildId && canManageGuild(guild))) return json({ error: 'Not authorized to link this canvas' }, 403)
+  const channelResponse = await fetch(`https://discord.com/api/v10/channels/${body.channelId}`, { headers: { authorization: `Bot ${env.DISCORD_BOT_TOKEN}` }, signal: AbortSignal.timeout(15_000) })
+  if (!channelResponse.ok) return json({ error: 'The bot cannot access that channel' }, 403)
+  const channel = JSON.parse(await readBoundedText(channelResponse, 64_000)) as DiscordChannel
+  if (channel.guild_id !== body.guildId || ![0, 5, 10, 11, 12].includes(channel.type)) return json({ error: 'Invalid Discord channel' }, 400)
+  await setDiscordMapping(env, body.canvasId, body.channelId, body.guildId)
+  return json({ linked: true })
+}
+
+async function authorizedOAuthSession(request: Request, env: Env, sessionId: string) {
+  if (!/^[0-9a-f-]{36}$/.test(sessionId) || cookieValue(request, OAUTH_COOKIE) !== sessionId) throw new Response('Unauthorized', { status: 401 })
+  const session = await env.DISCORD_OAUTH.getByName(sessionId).getSession()
+  if (!session?.userId || !session.canvasId) throw new Response('OAuth session expired', { status: 401 })
+  return { canvasId: session.canvasId, guilds: session.guilds, userId: session.userId }
+}
+
+function canManageGuild(guild: DiscordGuild) {
+  if (guild.owner) return true
+  const permissions = BigInt(guild.permissions || '0')
+  return Boolean(permissions & (1n << 3n) || permissions & (1n << 4n) || permissions & (1n << 5n))
+}
+
+function discordBotInvite(clientId: string, guildId: string) {
+  const url = new URL('https://discord.com/oauth2/authorize')
+  url.search = new URLSearchParams({ client_id: clientId, scope: 'bot applications.commands', permissions: '274878024704', guild_id: guildId, disable_guild_select: 'true' }).toString()
+  return url.toString()
+}
+
+function oauthCookie(state: string, request: Request) {
+  return `${OAUTH_COOKIE}=${state}; HttpOnly; SameSite=Lax; Path=/; Max-Age=900${new URL(request.url).protocol === 'https:' ? '; Secure' : ''}`
+}
+
+function cookieValue(request: Request, name: string) {
+  const value = request.headers.get('cookie')?.split(';').map((part) => part.trim()).find((part) => part.startsWith(`${name}=`))
+  return value ? decodeURIComponent(value.slice(name.length + 1)) : null
+}
+
+type DiscordChannel = { id: string; guild_id?: string; name?: string | null; type: number; parent_id?: string | null }
 
 async function receiveDiscordEvent(request: Request, env: Env) {
   const event = await verifiedBridgeJson<DiscordEvent>(request, env)

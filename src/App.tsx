@@ -7,7 +7,7 @@ import RightPanel from './components/RightPanel'
 type MobilePanel = 'left' | 'center' | 'right'
 
 export default function App() {
-  const [mobilePanel, setMobilePanel] = useState<MobilePanel>('center')
+  const [mobilePanel, setMobilePanel] = useState<MobilePanel>(() => new URL(window.location.href).searchParams.has('discordConnect') ? 'right' : 'center')
   const [leftOpen, setLeftOpen] = useState(true)
   const [rightOpen, setRightOpen] = useState(true)
 

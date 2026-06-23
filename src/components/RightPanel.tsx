@@ -11,7 +11,7 @@ const seedAnnotations: Annotation[] = [
 ]
 
 export default function RightPanel() {
-  const [tab, setTab] = useState<'annotations' | 'chat'>('annotations')
+  const [tab, setTab] = useState<'annotations' | 'chat'>(() => new URL(window.location.href).searchParams.has('discordConnect') ? 'chat' : 'annotations')
   return <aside className="side-panel right-panel">
     <div className="panel-tabs" role="tablist"><TabButton active={tab === 'annotations'} onClick={() => setTab('annotations')}>Annotations <span className="count">2</span></TabButton><TabButton active={tab === 'chat'} onClick={() => setTab('chat')}>Chat · Discord</TabButton></div>
     {tab === 'annotations' ? <Annotations /> : <CanvasChat />}

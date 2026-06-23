@@ -28,12 +28,14 @@
     "bindings": [
       { "name": "SHARES", "class_name": "ShareStore" },
       { "name": "CANVAS_ROOMS", "class_name": "CanvasRoom" },
-      { "name": "DISCORD_CHANNELS", "class_name": "DiscordChannelLink" }
+      { "name": "DISCORD_CHANNELS", "class_name": "DiscordChannelLink" },
+      { "name": "DISCORD_OAUTH", "class_name": "DiscordOAuthSession" }
     ]
   },
   "migrations": [
     { "tag": "v1", "new_sqlite_classes": ["ShareStore"] },
-    { "tag": "v2", "new_sqlite_classes": ["CanvasRoom", "DiscordChannelLink"] }
+    { "tag": "v2", "new_sqlite_classes": ["CanvasRoom", "DiscordChannelLink"] },
+    { "tag": "v3", "new_sqlite_classes": ["DiscordOAuthSession"] }
   ],
   "queues": {
     "producers": [

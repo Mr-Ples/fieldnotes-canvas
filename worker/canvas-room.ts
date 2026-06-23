@@ -173,6 +173,24 @@ export class DiscordChannelLink extends DurableObject<Env> {
   }
 }
 
+export type DiscordGuild = { id: string; name: string; icon?: string | null; owner: boolean; permissions: string }
+export class DiscordOAuthSession extends DurableObject<Env> {
+  async start(canvasId: string) {
+    await this.ctx.storage.put({ canvasId, expiresAt: Date.now() + 15 * 60_000 })
+    await this.ctx.storage.setAlarm(Date.now() + 15 * 60_000)
+  }
+  async complete(userId: string, guilds: DiscordGuild[]) {
+    await this.ctx.storage.put({ userId, guilds })
+  }
+  async getSession() {
+    const data = await this.ctx.storage.get(['canvasId', 'expiresAt', 'userId', 'guilds'])
+    const expiresAt = data.get('expiresAt') as number | undefined
+    if (!expiresAt || expiresAt < Date.now()) return null
+    return { canvasId: data.get('canvasId') as string | undefined, userId: data.get('userId') as string | undefined, guilds: (data.get('guilds') as DiscordGuild[] | undefined) ?? [], expiresAt }
+  }
+  async alarm() { await this.ctx.storage.deleteAll() }
+}
+
 type MessageRow = {
   id: string; origin: 'website' | 'discord'; author_id: string; author_name: string; author_avatar: string | null;
   content: string; reply_to: string | null; attachments: string; discord_message_id: string | null;
