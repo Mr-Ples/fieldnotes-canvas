@@ -1,13 +1,37 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { Archive, Bot, ChevronDown, FileText, FolderOpen, MessageSquare, MoreHorizontal, Plus, Search, Send, Sparkles } from 'lucide-react'
 import { Virtuoso } from 'react-virtuoso'
-import { canvases } from '../data'
-import { IconButton, TabButton } from './Primitives'
+import { canvases as seedCanvases } from '../data'
+import { CopyLinkButton, IconButton, TabButton } from './Primitives'
+import { useLocalStorage } from '../hooks/useLocalStorage'
+import { completeChat, type ChatMessage } from '../services/api'
 
 export default function LeftPanel() {
-  const [tab, setTab] = useState<'canvases' | 'chat'>('canvases')
+  const [tab, setTab] = useState<'canvases' | 'chat'>(() => window.location.hash.startsWith('#chat-') ? 'chat' : 'canvases')
   const [query, setQuery] = useState('')
+  const [canvases, setCanvases] = useLocalStorage('fieldnotes:canvases', seedCanvases)
+  const [activeId, setActiveId] = useState(() => {
+    const stored = localStorage.getItem('fieldnotes:active-canvas')
+    return stored ? (JSON.parse(stored) as { id: string }).id : 'attention'
+  })
   const filtered = canvases.filter((canvas) => canvas.title.toLowerCase().includes(query.toLowerCase()))
+  const createCanvas = () => {
+    const title = window.prompt('Canvas name')?.trim()
+    if (!title) return
+    const canvas = { id: crypto.randomUUID(), title, emoji: '◇', updated: 'Now', group: 'Active' }
+    setCanvases([canvas, ...canvases])
+    selectCanvas(canvas)
+  }
+  const selectCanvas = (canvas: typeof canvases[number]) => {
+    setActiveId(canvas.id)
+    localStorage.setItem('fieldnotes:active-canvas', JSON.stringify(canvas))
+    window.dispatchEvent(new CustomEvent('fieldnotes:canvas-selected', { detail: canvas }))
+  }
+  useEffect(() => {
+    const hash = () => { if (window.location.hash.startsWith('#chat-')) setTab('chat') }
+    window.addEventListener('hashchange', hash)
+    return () => window.removeEventListener('hashchange', hash)
+  }, [])
 
   return <aside className="side-panel left-panel">
     <div className="brand-row">
@@ -21,11 +45,11 @@ export default function LeftPanel() {
 
     {tab === 'canvases' ? <>
       <div className="search-box"><Search size={16} /><input aria-label="Search canvases" placeholder="Search canvases" value={query} onChange={(event) => setQuery(event.target.value)} /><kbd>⌘ K</kbd></div>
-      <button className="new-canvas"><span><Plus size={17} /> New canvas</span><span className="new-canvas-shortcut">N</span></button>
+      <button className="new-canvas" onClick={createCanvas}><span><Plus size={17} /> New canvas</span><span className="new-canvas-shortcut">N</span></button>
       <div className="canvas-list" aria-label="Canvas directory">
         <Virtuoso data={filtered} itemContent={(_, canvas) => <div className="canvas-group-wrap">
           {(filtered.findIndex((item) => item.group === canvas.group) === filtered.indexOf(canvas)) && <div className="group-label"><span>{canvas.group}</span><ChevronDown size={14} /></div>}
-          <a href={`#canvas-${canvas.id}`} className={`canvas-item ${canvas.id === 'attention' ? 'is-current' : ''}`}>
+          <a href={`#canvas-${canvas.id}`} onClick={() => selectCanvas(canvas)} className={`canvas-item ${canvas.id === activeId ? 'is-current' : ''}`}>
             <span className="canvas-symbol">{canvas.emoji}</span><span className="canvas-name">{canvas.title}</span><time>{canvas.updated}</time>
           </a>
         </div>} />
@@ -37,18 +61,41 @@ export default function LeftPanel() {
 
 function ChatPanel() {
   const [message, setMessage] = useState('')
+  const [messages, setMessages] = useLocalStorage<ChatMessage[]>('fieldnotes:chat', [
+    { id: 'welcome-user', role: 'user', content: 'What does it mean to treat attention as a design material?' },
+    { id: 'welcome-ai', role: 'assistant', content: 'It means designing not only what a person sees, but the rhythm of their focus: when the interface asks, waits, recedes, or returns something to awareness.' },
+  ])
+  const [pending, setPending] = useState(false)
+  const [error, setError] = useState('')
+  const submit = async () => {
+    const content = message.trim()
+    if (!content || pending) return
+    const next = [...messages, { id: crypto.randomUUID(), role: 'user' as const, content }]
+    setMessages(next); setMessage(''); setPending(true); setError('')
+    try {
+      const response = await completeChat(next)
+      setMessages([...next, { id: crypto.randomUUID(), role: 'assistant', content: response }])
+    } catch (reason) { setError(reason instanceof Error ? reason.message : 'Chat failed') }
+    finally { setPending(false) }
+  }
+  const saveSnippet = (item: ChatMessage) => {
+    const stored = JSON.parse(localStorage.getItem('fieldnotes:resources') ?? '[]') as unknown[]
+    localStorage.setItem('fieldnotes:resources', JSON.stringify([{ id: `res-${crypto.randomUUID()}`, kind: 'chat', title: item.content.slice(0, 64), meta: 'AI chat · Saved now', accent: '#b28a3d', content: item.content }, ...stored]))
+    window.dispatchEvent(new CustomEvent('fieldnotes:resources-changed'))
+  }
   return <div className="chat-panel">
-    <div className="chat-heading"><div><span className="eyebrow">Current chat</span><h3>Attention as a material</h3></div><IconButton label="New chat"><Plus size={18} /></IconButton></div>
-    <div className="model-pill"><Bot size={14} /> Claude 3.5 Sonnet <ChevronDown size={13} /></div>
+    <div className="chat-heading"><div><span className="eyebrow">Current chat</span><h3>Attention as a material</h3></div><IconButton label="New chat" onClick={() => setMessages([])}><Plus size={18} /></IconButton></div>
+    <div className="model-pill"><Bot size={14} /> OpenRouter Auto <ChevronDown size={13} /></div>
     <div className="messages">
-      <div className="message message-user">What does it mean to treat attention as a design material?</div>
-      <div className="message message-ai"><Sparkles size={15} /><div>It means designing not only what a person sees, but the rhythm of their focus: when the interface asks, waits, recedes, or returns something to awareness.<button className="save-snippet"><FileText size={13} /> Save as resource</button></div></div>
-      <div className="message message-user">Connect that to calm technology.</div>
-      <div className="message message-ai"><Sparkles size={15} /><div>Calm technology argues that information should move fluidly between the center and periphery of attention. The interface becomes an environment rather than a sequence of demands.<button className="save-snippet"><FileText size={13} /> Save as resource</button></div></div>
+      {messages.map((item) => item.role === 'user'
+        ? <div className="message message-user deep-link-target" id={`chat-${item.id}`} key={item.id}>{item.content}</div>
+        : <div className="message message-ai deep-link-target" id={`chat-${item.id}`} key={item.id}><Sparkles size={15} /><div>{item.content}<div className="flex items-center gap-2"><button className="save-snippet" onClick={() => saveSnippet(item)}><FileText size={13} /> Save as resource</button><CopyLinkButton target={`chat-${item.id}`}/></div></div></div>)}
+      {pending && <div className="message message-ai"><Sparkles size={15}/><div>Thinking…</div></div>}
+      {error && <div role="alert" className="message text-red-700">{error}</div>}
     </div>
-    <form className="chat-compose" onSubmit={(event) => { event.preventDefault(); setMessage('') }}>
+    <form className="chat-compose" onSubmit={(event) => { event.preventDefault(); void submit() }}>
       <textarea aria-label="Chat message" placeholder="Ask about this canvas…" value={message} onChange={(event) => setMessage(event.target.value)} />
-      <div><span>Uses canvas context</span><button aria-label="Send message" disabled={!message.trim()}><Send size={15} /></button></div>
+      <div><span>Uses canvas context</span><button aria-label="Send message" disabled={!message.trim() || pending}><Send size={15} /></button></div>
     </form>
   </div>
 }

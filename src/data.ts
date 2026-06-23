@@ -1,5 +1,5 @@
 export type Canvas = { id: string; title: string; emoji: string; updated: string; group: string }
-export type Resource = { id: string; kind: 'article' | 'pdf' | 'video' | 'chat'; title: string; meta: string; accent: string }
+export type Resource = { id: string; kind: 'article' | 'pdf' | 'video' | 'chat'; title: string; meta: string; accent: string; url?: string; content?: string }
 export type Comment = { id: string; author: string; initials: string; time: string; body: string; replies?: Comment[] }
 
 export const canvases: Canvas[] = [

@@ -44,19 +44,20 @@ export class CloudinaryMediaStorage implements MediaStorage {
       request.onload = () => {
         if (request.status < 200 || request.status >= 300) return reject(new Error('Upload failed'))
         const result = JSON.parse(request.responseText) as { public_id: string; secure_url: string; resource_type: string; bytes: number }
-        resolve({ id: result.public_id, url: result.secure_url, kind: toMediaKind(result.resource_type), name: file.name, bytes: result.bytes })
+        resolve({ id: `${result.resource_type}:${result.public_id}`, url: result.secure_url, kind: toMediaKind(result.resource_type), name: file.name, bytes: result.bytes })
       }
       request.send(form)
     })
   }
 
   async remove(id: string) {
-    const response = await fetch(`/api/media/${encodeURIComponent(id)}`, { method: 'DELETE' })
+    const response = await fetch('/api/media/delete', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ id }) })
     if (!response.ok) throw new Error('Could not remove media')
   }
 
   getDeliveryUrl(id: string) {
-    return id
+    if (id.startsWith('https://')) return id
+    throw new Error('Use the delivery URL returned with the uploaded media')
   }
 }
 

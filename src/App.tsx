@@ -15,11 +15,39 @@ export default function App() {
     const onHash = () => {
       const hash = window.location.hash
       if (hash.startsWith('#annotation-comment')) setMobilePanel('right')
+      else if (hash.startsWith('#chat-')) setMobilePanel('left')
       else if (hash.startsWith('#res-') || hash.startsWith('#comment-')) setMobilePanel('center')
     }
     onHash()
     window.addEventListener('hashchange', onHash)
     return () => window.removeEventListener('hashchange', onHash)
+  }, [])
+  useEffect(() => {
+    const center = document.querySelector<HTMLElement>('.center-panel')
+    const annotations = document.querySelector<HTMLElement>('.annotations')
+    if (!center || !annotations) return
+    let frame = 0
+    const sync = () => {
+      cancelAnimationFrame(frame)
+      frame = requestAnimationFrame(() => {
+        const centerRange = center.scrollHeight - center.clientHeight
+        const annotationRange = annotations.scrollHeight - annotations.clientHeight
+        if (centerRange > 0 && annotationRange > 0) annotations.scrollTop = (center.scrollTop / centerRange) * annotationRange
+      })
+    }
+    center.addEventListener('scroll', sync, { passive: true })
+    return () => { center.removeEventListener('scroll', sync); cancelAnimationFrame(frame) }
+  }, [mobilePanel])
+  useEffect(() => {
+    const token = new URL(window.location.href).searchParams.get('share')
+    if (!token || sessionStorage.getItem(`fieldnotes:loaded-share:${token}`)) return
+    void fetch(`/api/shares/${encodeURIComponent(token)}`).then(async (response) => {
+      const result = await response.json() as { snapshot?: Record<string, string> }
+      if (!response.ok || !result.snapshot) return
+      Object.entries(result.snapshot).forEach(([key, value]) => localStorage.setItem(key, value))
+      sessionStorage.setItem(`fieldnotes:loaded-share:${token}`, 'true')
+      window.location.reload()
+    })
   }, [])
 
   return <div className={`app-shell ${leftOpen ? '' : 'left-collapsed'} ${rightOpen ? '' : 'right-collapsed'}`} data-mobile-panel={mobilePanel}>

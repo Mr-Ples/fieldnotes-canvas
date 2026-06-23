@@ -4,10 +4,11 @@
   "version": "0.1.0",
   "type": "module",
   "scripts": {
-    "dev": "vite",
-    "build": "tsc -b && vite build",
+    "dev": "wrangler types && vite",
+    "build": "wrangler types && tsc -b && vite build",
     "preview": "vite preview",
-    "deploy": "npm run build && wrangler pages deploy dist"
+    "deploy": "npm run build && wrangler deploy",
+    "cf-typegen": "wrangler types"
   },
   "dependencies": {
     "@vitejs/plugin-react": "latest",
@@ -17,6 +18,8 @@
     "react-virtuoso": "latest"
   },
   "devDependencies": {
+    "@cloudflare/vite-plugin": "latest",
+    "@cloudflare/workers-types": "latest",
     "@tailwindcss/vite": "latest",
     "@types/react": "latest",
     "@types/react-dom": "latest",
