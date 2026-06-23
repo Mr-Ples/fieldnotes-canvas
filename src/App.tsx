@@ -1,0 +1,37 @@
+import { useEffect, useState } from 'react'
+import { Files, MessageSquare, NotebookPen, PanelLeftClose, PanelRightClose } from 'lucide-react'
+import CenterPanel from './components/CenterPanel'
+import LeftPanel from './components/LeftPanel'
+import RightPanel from './components/RightPanel'
+
+type MobilePanel = 'left' | 'center' | 'right'
+
+export default function App() {
+  const [mobilePanel, setMobilePanel] = useState<MobilePanel>('center')
+  const [leftOpen, setLeftOpen] = useState(true)
+  const [rightOpen, setRightOpen] = useState(true)
+
+  useEffect(() => {
+    const onHash = () => {
+      const hash = window.location.hash
+      if (hash.startsWith('#annotation-comment')) setMobilePanel('right')
+      else if (hash.startsWith('#res-') || hash.startsWith('#comment-')) setMobilePanel('center')
+    }
+    onHash()
+    window.addEventListener('hashchange', onHash)
+    return () => window.removeEventListener('hashchange', onHash)
+  }, [])
+
+  return <div className={`app-shell ${leftOpen ? '' : 'left-collapsed'} ${rightOpen ? '' : 'right-collapsed'}`} data-mobile-panel={mobilePanel}>
+    <LeftPanel />
+    <button className="desktop-panel-toggle left-toggle" onClick={() => setLeftOpen(!leftOpen)} aria-label="Toggle left panel"><PanelLeftClose size={16}/></button>
+    <CenterPanel />
+    <button className="desktop-panel-toggle right-toggle" onClick={() => setRightOpen(!rightOpen)} aria-label="Toggle right panel"><PanelRightClose size={16}/></button>
+    <RightPanel />
+    <nav className="mobile-nav" aria-label="Canvas areas">
+      <button className={mobilePanel === 'left' ? 'active' : ''} onClick={() => setMobilePanel('left')}><Files size={19}/><span>Canvases</span></button>
+      <button className={mobilePanel === 'center' ? 'active' : ''} onClick={() => setMobilePanel('center')}><NotebookPen size={19}/><span>Notes</span></button>
+      <button className={mobilePanel === 'right' ? 'active' : ''} onClick={() => setMobilePanel('right')}><MessageSquare size={19}/><span>Comments</span><i>2</i></button>
+    </nav>
+  </div>
+}
