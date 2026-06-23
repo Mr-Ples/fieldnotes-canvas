@@ -6,4 +6,3 @@ DISCORD_BOT_TOKEN=your_discord_bot_token
 DISCORD_BRIDGE_SECRET=generate_a_long_random_secret
 DISCORD_CLIENT_ID=your_discord_application_id
 DISCORD_CLIENT_SECRET=your_discord_oauth_client_secret
-DISCORD_OAUTH_REDIRECT_URI=http://localhost:5173/api/discord/callback

@@ -1,17 +1,42 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { ArrowLeft, Check, ExternalLink, Hash, LoaderCircle, Server, X } from 'lucide-react'
 
 type Guild = { id: string; name: string; icon?: string | null }
 type Channel = { id: string; name: string; type: number; parentId?: string | null }
 
 export default function DiscordConnectModal({ canvasId, open, onClose, onLinked }: { canvasId: string; open: boolean; onClose: () => void; onLinked: () => void }) {
-  const session = new URL(window.location.href).searchParams.get('discordConnect')
+  const [session, setSession] = useState(() => new URL(window.location.href).searchParams.get('discordConnect'))
   const [guilds, setGuilds] = useState<Guild[]>([])
   const [guild, setGuild] = useState<Guild>()
   const [channels, setChannels] = useState<Channel[]>([])
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
   const [inviteUrl, setInviteUrl] = useState('')
+  const authWindow = useRef<Window | null>(null)
+
+  useEffect(() => {
+    const receiveOAuth = (event: MessageEvent) => {
+      if (event.origin !== window.location.origin || (authWindow.current && event.source !== authWindow.current)) return
+      const payload = event.data as { type?: string; session?: string; canvasId?: string } | null
+      if (payload?.type !== 'fieldnotes:discord-oauth-complete' || payload.canvasId !== canvasId || !payload.session) return
+      authWindow.current = null
+      setSession(payload.session)
+      setError('')
+    }
+    window.addEventListener('message', receiveOAuth)
+    return () => window.removeEventListener('message', receiveOAuth)
+  }, [canvasId])
+
+  const startOAuth = () => {
+    setError('')
+    const opened = window.open(`/api/discord/connect?canvasId=${encodeURIComponent(canvasId)}`, 'fieldnotes-discord-oauth')
+    if (!opened) {
+      setError('Your browser blocked the Discord authorization tab. Allow pop-ups for this site and try again.')
+      return
+    }
+    authWindow.current = opened
+    opened.focus()
+  }
 
   useEffect(() => {
     if (!open || !session) return
@@ -59,7 +84,7 @@ export default function DiscordConnectModal({ canvasId, open, onClose, onLinked 
         <button className="icon-button" onClick={onClose} aria-label="Close"><X size={18}/></button>
       </header>
       <div className="max-h-[60vh] overflow-y-auto p-3">
-        {!session && <button className="flex w-full items-center justify-center gap-2 rounded-lg border-0 bg-indigo-600 px-4 py-3 text-xs font-semibold text-white" onClick={() => { window.location.href = `/api/discord/connect?canvasId=${encodeURIComponent(canvasId)}` }}><ExternalLink size={15}/> Continue with Discord</button>}
+        {!session && <><button className="flex w-full items-center justify-center gap-2 rounded-lg border-0 bg-indigo-600 px-4 py-3 text-xs font-semibold text-white" onClick={startOAuth}><ExternalLink size={15}/> Continue with Discord</button><p className="mx-2 mt-3 text-center text-[10px] leading-relaxed text-stone-500">Discord authorization opens in a separate browser tab. Discord requires OAuth sign-in on the web; it cannot be completed inside the desktop app.</p></>}
         {loading && <div className="flex items-center justify-center gap-2 py-10 text-xs text-stone-500"><LoaderCircle className="animate-spin" size={17}/> Loading Discord…</div>}
         {error && !loading && <div className="m-1 rounded-lg bg-red-50 p-3 text-[11px] text-red-800"><p className="m-0">{error}</p>{inviteUrl && <div className="mt-3 flex gap-2"><a className="rounded-md bg-indigo-600 px-3 py-2 font-semibold text-white no-underline" href={inviteUrl} target="_blank" rel="noreferrer">Add bot</a><button className="rounded-md border border-red-200 bg-white px-3 py-2" onClick={() => guild && void selectGuild(guild)}>Retry</button></div>}</div>}
         {!guild && !loading && session && guilds.map((item) => <button key={item.id} className="flex w-full items-center gap-3 rounded-lg border-0 bg-transparent p-3 text-left hover:bg-stone-100" onClick={() => void selectGuild(item)}>{item.icon ? <img className="size-9 rounded-xl" alt="" src={`https://cdn.discordapp.com/icons/${item.id}/${item.icon}.png?size=80`}/> : <span className="grid size-9 place-items-center rounded-xl bg-indigo-100 text-indigo-700"><Server size={17}/></span>}<span className="flex-1 truncate text-xs font-semibold">{item.name}</span></button>)}

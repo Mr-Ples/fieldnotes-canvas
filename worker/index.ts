@@ -138,13 +138,13 @@ async function setDiscordMapping(env: Env, canvasId: string, channelId: string, 
 const OAUTH_COOKIE = 'fieldnotes_discord_connect'
 
 async function startDiscordOAuth(request: Request, env: Env) {
-  if (!env.DISCORD_CLIENT_ID || !env.DISCORD_CLIENT_SECRET || !env.DISCORD_OAUTH_REDIRECT_URI) return json({ error: 'Discord OAuth is not configured' }, 503)
+  if (!env.DISCORD_CLIENT_ID || !env.DISCORD_CLIENT_SECRET) return json({ error: 'Discord OAuth is not configured' }, 503)
   const canvasId = new URL(request.url).searchParams.get('canvasId') ?? ''
   if (!/^[a-zA-Z0-9_-]{1,100}$/.test(canvasId)) return json({ error: 'Invalid canvas' }, 400)
   const state = crypto.randomUUID()
   await env.DISCORD_OAUTH.getByName(state).start(canvasId)
   const authorize = new URL('https://discord.com/oauth2/authorize')
-  authorize.search = new URLSearchParams({ response_type: 'code', client_id: env.DISCORD_CLIENT_ID, scope: 'identify guilds', state, redirect_uri: env.DISCORD_OAUTH_REDIRECT_URI }).toString()
+  authorize.search = new URLSearchParams({ response_type: 'code', client_id: env.DISCORD_CLIENT_ID, scope: 'identify guilds', state, redirect_uri: discordRedirectUri(request) }).toString()
   return new Response(null, { status: 302, headers: { location: authorize.toString(), 'set-cookie': oauthCookie(state, request) } })
 }
 
@@ -159,10 +159,17 @@ async function finishDiscordOAuth(request: Request, env: Env) {
 
   const tokenResponse = await fetch('https://discord.com/api/v10/oauth2/token', {
     method: 'POST', headers: { 'content-type': 'application/x-www-form-urlencoded' }, signal: AbortSignal.timeout(15_000),
-    body: new URLSearchParams({ client_id: env.DISCORD_CLIENT_ID, client_secret: env.DISCORD_CLIENT_SECRET, grant_type: 'authorization_code', code, redirect_uri: env.DISCORD_OAUTH_REDIRECT_URI }),
+    body: new URLSearchParams({ client_id: env.DISCORD_CLIENT_ID, client_secret: env.DISCORD_CLIENT_SECRET, grant_type: 'authorization_code', code, redirect_uri: discordRedirectUri(request) }),
   })
-  if (!tokenResponse.ok) return json({ error: 'Discord authorization failed' }, 502)
-  const token = JSON.parse(await readBoundedText(tokenResponse, 64_000)) as { access_token?: string }
+  const tokenText = await readBoundedText(tokenResponse, 64_000)
+  let token: { access_token?: string; error?: string; error_description?: string }
+  try { token = JSON.parse(tokenText) as typeof token }
+  catch { token = {} }
+  if (!tokenResponse.ok) {
+    const detail = (token.error_description || token.error || `HTTP ${tokenResponse.status}`).slice(0, 200)
+    console.error(JSON.stringify({ event: 'discord_oauth_token_failed', status: tokenResponse.status, detail }))
+    return json({ error: `Discord authorization failed: ${detail}` }, 502)
+  }
   if (!token.access_token) return json({ error: 'Discord returned no access token' }, 502)
   const headers = { authorization: `Bearer ${token.access_token}` }
   const [userResponse, guildResponse] = await Promise.all([
@@ -178,6 +185,10 @@ async function finishDiscordOAuth(request: Request, env: Env) {
   destination.searchParams.set('discordConnect', state)
   destination.searchParams.set('canvas', pending.canvasId)
   return new Response(null, { status: 302, headers: { location: destination.toString(), 'set-cookie': oauthCookie(state, request) } })
+}
+
+function discordRedirectUri(request: Request) {
+  return new URL('/api/discord/callback', new URL(request.url).origin).toString()
 }
 
 async function discordConnectSession(request: Request, env: Env) {

@@ -4,11 +4,45 @@
 
 1. Open <https://discord.com/developers/applications> and select **New Application**.
 2. Open **Bot**, create the bot, copy its token, and enable **Message Content Intent**.
-3. Open **OAuth2 → General** and add this redirect URL for local development:
+3. Open **OAuth2 → General → Redirects**, add this exact redirect URL, and select **Save Changes**:
 
 ```text
 http://localhost:5173/api/discord/callback
 ```
+
+Use the same hostname you use to open the site. If you browse to `http://127.0.0.1:5173`, register `http://127.0.0.1:5173/api/discord/callback` instead. Discord treats `localhost` and `127.0.0.1` as different redirect URLs.
+
+### Fix `Invalid OAuth2 redirect_uri`
+
+The Discord account connecting Fieldnotes does **not** need to own the bot. It must own the Discord server or have **Manage Server** permission there.
+
+If Discord displays `Invalid OAuth2 redirect_uri`:
+
+1. Check that `DISCORD_CLIENT_ID` in `.dev.vars` is the **Application ID** of the same Discord application you are editing.
+2. In that application, open **OAuth2 → General → Redirects**.
+3. Add exactly `http://localhost:5173/api/discord/callback` with no trailing slash.
+4. Select **Save Changes** in the Discord Developer Portal.
+5. Open Fieldnotes at exactly `http://localhost:5173`, not `127.0.0.1`, another port, or a LAN address.
+6. Restart the site with `npm run dev`.
+
+For another origin, register that exact origin followed by `/api/discord/callback`. For example, if Fieldnotes opens at `http://127.0.0.1:5173`, register `http://127.0.0.1:5173/api/discord/callback`.
+
+### Fix `Discord authorization failed`
+
+This means Discord accepted the redirect but rejected the authorization-code exchange:
+
+1. Open the same application in the Discord Developer Portal.
+2. Copy **General Information → Application ID** into `DISCORD_CLIENT_ID` in `.dev.vars`.
+3. Open **OAuth2 → General**, reset or copy **Client Secret**, and put it in `DISCORD_CLIENT_SECRET`.
+4. Do not use the bot token, public key, or generated bridge secret as the client secret.
+5. Do not wrap either value in quotes or add spaces.
+6. Restart `npm run dev` and begin a new authorization attempt; an old OAuth code cannot be reused.
+
+The local error response includes Discord's specific reason, such as `invalid_client` or `invalid_grant`.
+
+### Fix local `SQLITE_BUSY` alarm errors
+
+Run only one Fieldnotes development server at a time. Stop every existing `npm run dev` process, then start one fresh process. The OAuth cleanup alarm uses bounded key deletion; if an older development process remains active, it can still hold the local Durable Objects SQLite database lock.
 
 4. Open **OAuth2 → URL Generator**.
 5. Select the `bot` and `applications.commands` scopes.
@@ -45,7 +79,6 @@ openssl rand -hex 32
 | `DISCORD_BRIDGE_SECRET` | Generate it yourself with `openssl rand -hex 32`. Use the exact same generated value in both environment files. |
 | `DISCORD_CLIENT_ID` | Discord Developer Portal → your application → **General Information** → Application ID. |
 | `DISCORD_CLIENT_SECRET` | Discord Developer Portal → your application → **OAuth2 → General** → Client Secret. Reset it if Discord has not shown one yet. |
-| `DISCORD_OAUTH_REDIRECT_URI` | You choose this URL. Locally use `http://localhost:5173/api/discord/callback`. In production use `https://YOUR_SITE_DOMAIN/api/discord/callback`. Add the exact same URL under Discord Developer Portal → **OAuth2 → General → Redirects**. |
 | `FIELDNOTES_API_URL` | The base URL of this site, without a trailing slash. Locally use `http://localhost:5173`; in production use `https://YOUR_SITE_DOMAIN`. |
 | `PORT` | The Discord bridge health-check port. Leave it as `8080` unless your container host requires another value. |
 
@@ -62,7 +95,6 @@ DISCORD_BOT_TOKEN=...
 DISCORD_BRIDGE_SECRET=<generated secret>
 DISCORD_CLIENT_ID=<Discord application ID>
 DISCORD_CLIENT_SECRET=<OAuth2 client secret>
-DISCORD_OAUTH_REDIRECT_URI=http://localhost:5173/api/discord/callback
 ```
 
 Put the same Discord token and bridge secret in `services/discord-bridge/.env`:
@@ -95,9 +127,11 @@ If the site is not running on port 5173, update `FIELDNOTES_API_URL` in the brid
 
 1. Open the canvas’s **Chat · Discord** tab.
 2. Select **Connect Discord**.
-3. Authorize Discord and choose a server you manage.
+3. Authorize Discord in the new browser tab. It returns automatically to the original canvas, where you choose a server you manage.
 4. If the bot is already installed, select a channel or thread and the canvas is linked immediately.
 5. If the bot is missing, select **Add bot**, finish Discord’s installation flow, return to Fieldnotes, and select **Retry**.
+
+Discord's supported OAuth flow runs in a web browser, not inside the Discord desktop app. If Discord asks you to sign in, sign in on that browser once; future authorizations can reuse its Discord session. The site cannot safely force the OAuth flow into the desktop client.
 
 The slash command remains available as a fallback:
 
@@ -127,10 +161,9 @@ npx wrangler secret put DISCORD_BOT_TOKEN
 npx wrangler secret put DISCORD_BRIDGE_SECRET
 npx wrangler secret put DISCORD_CLIENT_ID
 npx wrangler secret put DISCORD_CLIENT_SECRET
-npx wrangler secret put DISCORD_OAUTH_REDIRECT_URI
 ```
 
-Before deploying, also add `https://<YOUR_DEPLOYED_SITE>/api/discord/callback` under **Discord Developer Portal → OAuth2 → General**, and use that exact URL for `DISCORD_OAUTH_REDIRECT_URI`.
+Before deploying, also add `https://<YOUR_DEPLOYED_SITE>/api/discord/callback` under **Discord Developer Portal → OAuth2 → General → Redirects**. The Worker derives this URL from the current site origin; no redirect URL environment variable is required.
 
 Deploy:
 

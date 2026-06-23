@@ -12,6 +12,14 @@ export default function App() {
   const [rightOpen, setRightOpen] = useState(true)
 
   useEffect(() => {
+    const url = new URL(window.location.href)
+    const session = url.searchParams.get('discordConnect')
+    const canvasId = url.searchParams.get('canvas')
+    if (!session || !canvasId || !window.opener) return
+    window.opener.postMessage({ type: 'fieldnotes:discord-oauth-complete', session, canvasId }, window.location.origin)
+    window.close()
+  }, [])
+  useEffect(() => {
     const onHash = () => {
       const hash = window.location.hash
       if (hash.startsWith('#annotation-comment')) setMobilePanel('right')
