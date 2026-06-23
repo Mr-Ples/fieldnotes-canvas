@@ -437,7 +437,7 @@ async function ingestLink(request: Request, ctx: ExecutionContext) {
   const target = new URL(value)
   if (target.protocol !== 'https:' || isPrivateHost(target.hostname)) return json({ error: 'Only public HTTPS links are supported' }, 400)
 
-  const cache = caches.default
+  const cache = await caches.open('fieldnotes-link-cache')
   const cacheKey = new Request(`https://fieldnotes-cache.invalid/link?url=${encodeURIComponent(target.href)}`)
   const cached = await cache.match(cacheKey)
   if (cached) return cached

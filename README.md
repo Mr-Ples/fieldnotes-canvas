@@ -184,17 +184,10 @@ npx wrangler login
 npx wrangler queues create fieldnotes-discord-outbound
 ```
 
-Add production secrets interactively:
+Add production secrets from `.dev.vars` in one shot:
 
 ```sh
-npx wrangler secret put OPENROUTER_API_KEY
-npx wrangler secret put CLOUDINARY_CLOUD_NAME
-npx wrangler secret put CLOUDINARY_API_KEY
-npx wrangler secret put CLOUDINARY_API_SECRET
-npx wrangler secret put DISCORD_BOT_TOKEN
-npx wrangler secret put DISCORD_BRIDGE_SECRET
-npx wrangler secret put DISCORD_CLIENT_ID
-npx wrangler secret put DISCORD_CLIENT_SECRET
+npx wrangler secret bulk .dev.vars
 ```
 
 Before deploying, also add `https://<YOUR_DEPLOYED_SITE>/api/discord/callback` under **Discord Developer Portal → OAuth2 → General → Redirects**. The Worker derives this URL from the current site origin; no redirect URL environment variable is required.

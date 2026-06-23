@@ -5,6 +5,7 @@
   "type": "module",
   "scripts": {
     "dev": "tsx watch src/index.ts",
+    "run": "npm --prefix /media/projects/personal-site/services/discord-bridge run dev",
     "start": "node dist/index.js",
     "build": "tsc -p tsconfig.json"
   },
