@@ -44,6 +44,15 @@ The local error response includes Discord's specific reason, such as `invalid_cl
 
 Run only one Fieldnotes development server at a time. Stop every existing `npm run dev` process, then start one fresh process. The OAuth cleanup alarm uses bounded key deletion; if an older development process remains active, it can still hold the local Durable Objects SQLite database lock.
 
+If `SQLITE_BUSY` continues after all site servers are stopped, preserve and reset the local Workerd state:
+
+```sh
+mv .wrangler/state .wrangler/state.backup
+npm run dev
+```
+
+Only do this while every Fieldnotes site server is stopped. This resets local-only Durable Object data, so reconnect the canvas to its Discord channel afterward. The previous state remains available in `.wrangler/state.backup`; production data is unaffected. The Discord bridge is a separate process and does not lock this database.
+
 4. Open **OAuth2 → URL Generator**.
 5. Select the `bot` and `applications.commands` scopes.
 6. Select these bot permissions:
@@ -106,6 +115,8 @@ FIELDNOTES_BRIDGE_SECRET=<same generated secret>
 PORT=8080
 ```
 
+For local development, the bridge also loads `DISCORD_BOT_TOKEN` and `DISCORD_BRIDGE_SECRET` directly from the repository-root `.dev.vars` when they are absent from its own `.env`. Values in `services/discord-bridge/.env` take precedence. Docker and production inject these values through normal process environment variables; Wrangler does not load `.dev.vars` into a separate Node process.
+
 ## 3. Run locally
 
 Run the site:
@@ -140,6 +151,25 @@ The slash command remains available as a fallback:
 ```
 
 Messages will now synchronize in both directions.
+
+You can type an ordinary message in the linked Discord channel or thread; the bot does not need to be mentioned. Messages from human Discord users are forwarded to the app. Messages created by bots and webhooks are intentionally ignored to prevent synchronization loops.
+
+For Discord → Fieldnotes synchronization, the bridge must remain running in a second terminal and display `discord_ready`:
+
+```sh
+cd services/discord-bridge
+npm run dev
+```
+
+After a Discord message, the bridge should print `discord_event_forwarded` with `{"accepted":true}`. If it prints `{"ignored":true,"reason":"Channel is not linked"}`, reconnect the canvas to that exact channel or thread. If it prints nothing, enable **Message Content Intent** under Discord Developer Portal → **Bot**, confirm the bot can view that channel, and restart the bridge.
+
+Inspect the running bridge from another terminal:
+
+```sh
+curl http://localhost:8080
+```
+
+`ok` must be `true` and `guildCount` must be at least `1`. After typing a human message in the linked channel, `lastGatewayMessage` and `lastForward` must be populated. A missing `lastGatewayMessage` means Discord did not deliver the event to the bridge; a populated `lastGatewayMessage` with an error or ignored result in `lastForward` identifies the Worker-side failure.
 
 ## 5. Deploy the site
 
