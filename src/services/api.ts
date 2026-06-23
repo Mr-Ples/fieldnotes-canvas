@@ -1,6 +1,6 @@
 export type ChatMessage = { id: string; role: 'user' | 'assistant'; content: string }
 
-function deviceId() {
+export function getDeviceId() {
   const key = 'fieldnotes:device-id'
   let id = localStorage.getItem(key)
   if (!id) {
@@ -16,7 +16,7 @@ export async function completeChat(messages: ChatMessage[], signal?: AbortSignal
   const canvasContext = `${active.title}\n\n${noteHtml.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').slice(0, 20_000)}`
   const response = await fetch('/api/chat', {
     method: 'POST',
-    headers: { 'content-type': 'application/json', 'x-fieldnotes-device': deviceId() },
+    headers: { 'content-type': 'application/json', 'x-fieldnotes-device': getDeviceId() },
     body: JSON.stringify({ messages: messages.map(({ role, content }) => ({ role, content })), canvasContext }),
     signal,
   })

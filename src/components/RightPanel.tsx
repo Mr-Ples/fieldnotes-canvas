@@ -1,7 +1,8 @@
-import { useEffect, useState } from 'react'
-import { ExternalLink, MessageSquareText, MoreHorizontal, Plus, Send } from 'lucide-react'
+import { useState } from 'react'
+import { MessageSquareText, MoreHorizontal, Plus, Send } from 'lucide-react'
 import { Avatar, CopyLinkButton, IconButton, TabButton } from './Primitives'
 import { useLocalStorage } from '../hooks/useLocalStorage'
+import CanvasChat from './CanvasChat'
 
 type Annotation = { id: string; quote: string; author: string; initials: string; time: string; body: string; replies?: string[] }
 const seedAnnotations: Annotation[] = [
@@ -10,10 +11,10 @@ const seedAnnotations: Annotation[] = [
 ]
 
 export default function RightPanel() {
-  const [tab, setTab] = useState<'annotations' | 'discord'>('annotations')
+  const [tab, setTab] = useState<'annotations' | 'chat'>('annotations')
   return <aside className="side-panel right-panel">
-    <div className="panel-tabs" role="tablist"><TabButton active={tab === 'annotations'} onClick={() => setTab('annotations')}>Annotations <span className="count">2</span></TabButton><TabButton active={tab === 'discord'} onClick={() => setTab('discord')}>Discord</TabButton></div>
-    {tab === 'annotations' ? <Annotations /> : <Discord />}
+    <div className="panel-tabs" role="tablist"><TabButton active={tab === 'annotations'} onClick={() => setTab('annotations')}>Annotations <span className="count">2</span></TabButton><TabButton active={tab === 'chat'} onClick={() => setTab('chat')}>Chat · Discord</TabButton></div>
+    {tab === 'annotations' ? <Annotations /> : <CanvasChat />}
   </aside>
 }
 
@@ -46,24 +47,4 @@ function Annotations() {
     </article>)}
     <button className="new-annotation" onClick={create}><Plus size={15}/> New annotation</button>
   </div>
-}
-
-function Discord() {
-  const [canvasId, setCanvasId] = useState(() => {
-    const stored = localStorage.getItem('fieldnotes:active-canvas')
-    return stored ? (JSON.parse(stored) as { id: string }).id : 'attention'
-  })
-  const [embeds, setEmbeds] = useLocalStorage<Record<string, string>>('fieldnotes:discord-embeds', {})
-  useEffect(() => {
-    const select = (event: Event) => setCanvasId((event as CustomEvent<{ id: string }>).detail.id)
-    window.addEventListener('fieldnotes:canvas-selected', select)
-    return () => window.removeEventListener('fieldnotes:canvas-selected', select)
-  }, [])
-  const embedUrl = embeds[canvasId] || import.meta.env.VITE_TITAN_EMBED_URL as string | undefined
-  const configure = () => {
-    const value = window.prompt('Titan Embeds URL for this canvas', embedUrl ?? '')?.trim()
-    if (value) setEmbeds({ ...embeds, [canvasId]: value })
-  }
-  if (embedUrl) return <div className="relative h-full"><button className="absolute top-2 right-2 z-10 rounded-md bg-white/90 px-2 py-1 text-[9px] shadow" onClick={configure}>Configure</button><iframe className="h-full min-h-[600px] w-full border-0" title="Canvas Discord" src={embedUrl} sandbox="allow-scripts allow-same-origin allow-popups allow-forms" /></div>
-  return <div className="discord-panel"><div className="discord-orb">#</div><h3>Canvas conversation</h3><p>This canvas can have its own Discord channel for real-time discussion and file sharing.</p><div className="discord-preview"><span>Canvas-specific channel</span><small>Configure a Titan Embeds URL for this canvas.</small></div><button className="share-button mx-auto mb-3" onClick={configure}>Configure embed</button><a href="https://discord.com" target="_blank" rel="noreferrer">Open in Discord <ExternalLink size={14}/></a></div>
 }

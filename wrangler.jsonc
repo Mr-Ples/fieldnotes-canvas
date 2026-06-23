@@ -26,12 +26,23 @@
   ],
   "durable_objects": {
     "bindings": [
-      { "name": "SHARES", "class_name": "ShareStore" }
+      { "name": "SHARES", "class_name": "ShareStore" },
+      { "name": "CANVAS_ROOMS", "class_name": "CanvasRoom" },
+      { "name": "DISCORD_CHANNELS", "class_name": "DiscordChannelLink" }
     ]
   },
   "migrations": [
-    { "tag": "v1", "new_sqlite_classes": ["ShareStore"] }
+    { "tag": "v1", "new_sqlite_classes": ["ShareStore"] },
+    { "tag": "v2", "new_sqlite_classes": ["CanvasRoom", "DiscordChannelLink"] }
   ],
+  "queues": {
+    "producers": [
+      { "binding": "DISCORD_OUTBOUND", "queue": "fieldnotes-discord-outbound" }
+    ],
+    "consumers": [
+      { "queue": "fieldnotes-discord-outbound", "max_batch_size": 10, "max_batch_timeout": 2, "max_retries": 5 }
+    ]
+  },
   "observability": {
     "enabled": true,
     "head_sampling_rate": 1
