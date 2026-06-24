@@ -145,11 +145,15 @@ export default function AnnotationLayer({ editorRef, containerRef, canvasId, can
     if (!editor) return
     const highlights = editor.querySelectorAll<HTMLElement>('[data-annotation-id]')
     highlights.forEach((highlight) => highlight.classList.toggle('is-annotation-active', highlight.dataset.annotationId === hoveredCard))
-    return () => highlights.forEach((highlight) => highlight.classList.remove('is-annotation-active'))
+    return () => {
+      highlights.forEach((highlight) => highlight.classList.remove('is-annotation-active'))
+    }
   }, [editorRef, hoveredCard])
   useEffect(() => {
     window.dispatchEvent(new CustomEvent('fieldnotes:annotations-docked', { detail: { docked: annotationTabOpen, count: items.length } }))
-    return () => window.dispatchEvent(new CustomEvent('fieldnotes:annotations-docked', { detail: { docked: false, count: 0 } }))
+    return () => {
+      window.dispatchEvent(new CustomEvent('fieldnotes:annotations-docked', { detail: { docked: false, count: 0 } }))
+    }
   }, [annotationTabOpen, items.length])
 
   useLayoutEffect(() => {
@@ -362,7 +366,7 @@ export default function AnnotationLayer({ editorRef, containerRef, canvasId, can
       <textarea ref={composerRef} value={body} onChange={(event) => setBody(event.target.value)} onKeyDown={(event) => { if ((event.metaKey || event.ctrlKey) && event.key === 'Enter') create() }} placeholder="Add a comment…" aria-label="Annotation comment" />
       <div><span>⌘ Enter to send</span><button disabled={!body.trim()} onClick={create}><Check size={13} /> Comment</button></div>
     </div>}
-    {!annotationTabOpen && mode !== 'hidden' && <div className="annotation-thread-layer">{positions.map((position) => {
+    {!annotationTabOpen && <div className="annotation-thread-layer">{positions.map((position) => {
       const item = items.find((candidate) => candidate.id === position.id)
       if (!item) return null
       const foreground = active === item.id || menu === item.id

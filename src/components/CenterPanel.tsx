@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type FormEvent, type KeyboardEvent, type RefObject } from 'react'
+import { useEffect, useRef, useState, type CSSProperties, type FormEvent, type KeyboardEvent, type RefObject } from 'react'
 import { Bold, Check, ChevronDown, Code2, Eye, EyeClosed, File, FileText, Heading2, Italic, Link2, List, LogOut, MessageCircle, MoreHorizontal, Plus, Quote, Reply, Send, Settings, Trash2, Upload, Video, X } from 'lucide-react'
 import { canvases, comments, projects, resources, type Canvas, type Comment } from '../data'
 import { Avatar, CopyLinkButton, IconButton, TabButton } from './Primitives'
@@ -335,7 +335,7 @@ function Resources({ canInteract }: { canInteract: boolean }) {
     </section>}
     <section className="resource-list"><div className="section-title"><h2>Resources <span>{added.length}</span></h2><button>Recently added <ChevronDown size={14} /></button></div>
       {added.map((resource) => <article className="resource-card deep-link-target" id={resource.id} key={resource.id}>
-        <div className="resource-thumb" style={{ '--resource-accent': resource.accent } as React.CSSProperties}>{resource.kind === 'video' ? <Video /> : resource.kind === 'pdf' ? <FileText /> : resource.kind === 'chat' ? <MessageCircle /> : <File />}</div>
+        <div className="resource-thumb" style={{ '--resource-accent': resource.accent } as CSSProperties}>{resource.kind === 'video' ? <Video /> : resource.kind === 'pdf' ? <FileText /> : resource.kind === 'chat' ? <MessageCircle /> : <File />}</div>
         <div className="resource-info"><span className="resource-kind">{resource.kind}</span><h3>{resource.title}</h3><p>{resource.meta}</p>{resource.url && <a className="mt-1 inline-flex text-[9px] text-emerald-800 underline" href={resource.url} target="_blank" rel="noreferrer">Open source</a>}{resource.content && <details className="mt-2 text-[10px]"><summary className="cursor-pointer text-emerald-800">Read extracted text</summary><div className="mt-2 max-h-72 overflow-auto whitespace-pre-wrap rounded-lg bg-stone-100 p-3 font-serif text-xs leading-relaxed">{resource.content}</div></details>}</div>
         <div className="resource-actions"><CopyLinkButton target={resource.id} /><IconButton label="Resource options"><MoreHorizontal size={18}/></IconButton></div>
       </article>)}

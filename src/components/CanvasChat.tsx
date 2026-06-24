@@ -1,4 +1,4 @@
-import { useEffect, useLayoutEffect, useMemo, useRef, useState, type MouseEvent as ReactMouseEvent } from 'react'
+import { useEffect, useLayoutEffect, useMemo, useRef, useState, type KeyboardEvent, type MouseEvent as ReactMouseEvent } from 'react'
 import { createPortal } from 'react-dom'
 import { BookmarkPlus, Check, ExternalLink, Forward, Link2, Lock, MessageCircleReply, MoreHorizontal, Paperclip, RefreshCw, Send, Settings, Smile, SmilePlus, Trash2, Unplug, UserCheck, UserPlus } from 'lucide-react'
 import { Virtuoso, type VirtuosoHandle } from 'react-virtuoso'
@@ -332,7 +332,7 @@ export default function CanvasChat() {
     setPopover((current) => current?.type === 'emoji' && !current.message ? undefined : { type: 'emoji', top, left })
   }
 
-  const handleKeyDown = (event: React.KeyboardEvent<HTMLTextAreaElement>) => {
+  const handleKeyDown = (event: KeyboardEvent<HTMLTextAreaElement>) => {
     if (event.key === 'Enter' && !event.shiftKey) {
       event.preventDefault()
       void send()

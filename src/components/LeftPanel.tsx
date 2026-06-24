@@ -1,4 +1,4 @@
-import { useEffect, useState, type MouseEvent } from 'react'
+import { useEffect, useState, type KeyboardEvent, type MouseEvent } from 'react'
 import { Bot, ChevronDown, ChevronRight, FileText, Link2, PanelLeft, Plus, Search, Send, Settings, Sparkles } from 'lucide-react'
 import { canvases as seedCanvases, projects as seedProjects, resources as seedResources, type Canvas } from '../data'
 import { CopyLinkButton, IconButton } from './Primitives'
@@ -90,7 +90,7 @@ export function ChatPanel() {
     } catch (reason) { setError(reason instanceof Error ? reason.message : 'Chat failed') }
     finally { setPending(false) }
   }
-  const handleKeyDown = (event: React.KeyboardEvent<HTMLTextAreaElement>) => {
+  const handleKeyDown = (event: KeyboardEvent<HTMLTextAreaElement>) => {
     if (event.key === 'Enter' && !event.shiftKey) {
       event.preventDefault()
       void submit()
