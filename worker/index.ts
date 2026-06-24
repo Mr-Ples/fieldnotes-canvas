@@ -229,8 +229,10 @@ async function canvasChat(request: Request, env: Env, canvasId: string, action: 
       ownerToken ? room.claimOwnerToken(ownerToken) : Promise.resolve(false)
     ])
     let discord = storedDiscord
-    const [canCanvas, canLlm] = await Promise.all([
+    const [canCanvas, canResources, canDiscussion, canLlm] = await Promise.all([
       room.canUse('canvas', identity.authorId, ownerToken, inviteToken),
+      room.canUse('resources', identity.authorId, ownerToken, inviteToken),
+      room.canUse('discussion', identity.authorId, ownerToken, inviteToken),
       room.canUse('llm', identity.authorId, ownerToken, inviteToken),
     ])
     if (discord && !discord.channelName) {
@@ -243,7 +245,7 @@ async function canvasChat(request: Request, env: Env, canvasId: string, action: 
         }
       } catch { /* Ignore name lookup failures. */ }
     }
-    return json({ messages, discord, canModerate, settings, isInviteValid, access: { canvas: canCanvas, llm: canLlm } })
+    return json({ messages, discord, canModerate, settings, isInviteValid, access: { canvas: canCanvas, resources: canResources, discussion: canDiscussion, llm: canLlm, chat: await room.canParticipate(identity.authorId, ownerToken, inviteToken) } })
   }
   if (request.method !== 'POST') return json({ error: 'Method not allowed' }, 405)
   const identity = await websiteIdentity(request, env, actor)
@@ -332,13 +334,15 @@ async function canvasSettings(request: Request, env: Env, canvasId: string) {
   if (!ownerToken || !(await room.claimOwnerToken(ownerToken))) {
     return json({ error: 'Only the page owner can update settings' }, 403)
   }
-  const body = await readJson<{ settings?: Partial<{ locked: boolean; loginOnly: boolean; canvasMode: 'public' | 'login' | 'readonly'; llmMode: 'public' | 'login' | 'readonly' }> }>(request)
+  const body = await readJson<{ settings?: Partial<{ locked: boolean; loginOnly: boolean; canvasMode: 'public' | 'login' | 'readonly'; resourceMode: 'public' | 'login' | 'readonly'; discussionMode: 'public' | 'login' | 'readonly'; llmMode: 'public' | 'login' | 'readonly' }> }>(request)
   if (!body.settings) return json({ error: 'Missing settings' }, 400)
   const current = await room.getSettings()
   const next = {
     locked: typeof body.settings.locked === 'boolean' ? body.settings.locked : current.locked,
     loginOnly: typeof body.settings.loginOnly === 'boolean' ? body.settings.loginOnly : current.loginOnly,
     canvasMode: ['public', 'login', 'readonly'].includes(body.settings.canvasMode ?? '') ? body.settings.canvasMode! : current.canvasMode,
+    resourceMode: ['public', 'login', 'readonly'].includes(body.settings.resourceMode ?? '') ? body.settings.resourceMode! : current.resourceMode,
+    discussionMode: ['public', 'login', 'readonly'].includes(body.settings.discussionMode ?? '') ? body.settings.discussionMode! : current.discussionMode,
     llmMode: ['public', 'login', 'readonly'].includes(body.settings.llmMode ?? '') ? body.settings.llmMode! : current.llmMode,
   }
   await room.setSettings(next)
@@ -353,7 +357,7 @@ async function canvasInvites(request: Request, env: Env, canvasId: string) {
     return json({ error: 'Only the page owner can create invite links' }, 403)
   }
   const body = await readJson<{ permissions?: Record<string, boolean> }>(request)
-  const permissions = Object.fromEntries(Object.entries(body.permissions ?? {}).filter(([key, value]) => ['canvas', 'llm', 'chat'].includes(key) && typeof value === 'boolean'))
+  const permissions = Object.fromEntries(Object.entries(body.permissions ?? {}).filter(([key, value]) => ['canvas', 'resources', 'discussion', 'llm', 'chat'].includes(key) && typeof value === 'boolean'))
   const token = await room.createInvite(permissions)
   return json({ token })
 }

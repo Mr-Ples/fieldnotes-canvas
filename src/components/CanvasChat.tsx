@@ -172,9 +172,9 @@ export default function CanvasChat() {
         messages: Message[];
         discord?: { channelId: string; guildId: string; inviteUrl?: string; channelName?: string } | null;
         canModerate?: boolean;
-        settings?: { locked: boolean; loginOnly: boolean };
+        settings?: { locked: boolean; loginOnly: boolean; canvasMode?: 'public' | 'login' | 'readonly'; resourceMode?: 'public' | 'login' | 'readonly'; discussionMode?: 'public' | 'login' | 'readonly'; llmMode?: 'public' | 'login' | 'readonly' };
         isInviteValid?: boolean;
-        access?: { canvas: boolean; llm: boolean };
+        access?: { canvas: boolean; resources: boolean; discussion: boolean; llm: boolean; chat: boolean };
       }
       if (!disposed) {
         merge(result.messages); setCanModerate(Boolean(result.canModerate))
@@ -182,6 +182,7 @@ export default function CanvasChat() {
         if (result.access) window.dispatchEvent(new CustomEvent('fieldnotes:access-changed', { detail: result.access }))
         setDiscordLinked(Boolean(result.discord)); setDiscordInvite(result.discord?.inviteUrl ?? ''); setDiscordChannelName(result.discord?.channelName ?? '')
         if (result.settings) setSettings(result.settings)
+        if (result.settings && result.access) window.dispatchEvent(new CustomEvent('fieldnotes:permissions-changed', { detail: { settings: result.settings, access: result.access } }))
         if (result.isInviteValid !== undefined) {
           setIsInviteValid(result.isInviteValid)
           if (!result.isInviteValid && savedInvite) {

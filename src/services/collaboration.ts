@@ -2,12 +2,16 @@ export type AccessMode = 'public' | 'login' | 'readonly'
 
 export type CollaborationSettings = {
   canvas: AccessMode
+  resources: AccessMode
+  discussion: AccessMode
   llm: AccessMode
   chat: AccessMode
 }
 
 export const defaultCollaborationSettings: CollaborationSettings = {
   canvas: 'public',
+  resources: 'public',
+  discussion: 'public',
   llm: 'public',
   chat: 'public',
 }

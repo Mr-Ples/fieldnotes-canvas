@@ -7,14 +7,14 @@ import { showConfirm, showToast } from './Popups'
 
 type AnnotationReply = string | { id?: string; author: string; authorId?: string; avatar?: string; initials: string; body: string }
 type Annotation = { id: string; anchorId?: string; quote: string; author: string; authorId?: string; avatar?: string; initials: string; time: string; body: string; replies?: AnnotationReply[] }
-type Position = { id: string; top: number; compact: boolean }
+type Position = { id: string; top: number; compact: boolean; anchorLeft: number; anchorRight: number }
 
 const seedAnnotations: Annotation[] = [
   { id: 'annotation-comment-1', anchorId: 'annotation-1', quote: '“what kind of attention does this moment deserve?”', author: 'Mara Chen', initials: 'MC', time: '24m ago', body: 'This framing is strong. It moves the responsibility back to the designer, not the user.' },
   { id: 'annotation-comment-2', anchorId: 'annotation-2', quote: 'The return is as important as the capture.', author: 'Jon Bell', initials: 'JB', time: '1h ago', body: 'Could we connect this to the idea of “resumability” in tools for thought?' },
 ]
 
-export default function AnnotationLayer({ editorRef, containerRef, canvasId, canInteract, onDocumentChange }: { editorRef: RefObject<HTMLElement | null>; containerRef: RefObject<HTMLElement | null>; canvasId: string; canInteract: boolean; onDocumentChange: () => void }) {
+export default function AnnotationLayer({ editorRef, containerRef, canvasId, canInteract, canSaveResource, onDocumentChange }: { editorRef: RefObject<HTMLElement | null>; containerRef: RefObject<HTMLElement | null>; canvasId: string; canInteract: boolean; canSaveResource: boolean; onDocumentChange: () => void }) {
   const [items, setItems] = useLocalStorage<Annotation[]>('fieldnotes:annotations', seedAnnotations)
   const [selection, setSelection] = useState<{ range: Range; quote: string; rect: DOMRect } | null>(null)
   const [composing, setComposing] = useState(false)
@@ -22,11 +22,12 @@ export default function AnnotationLayer({ editorRef, containerRef, canvasId, can
   const [reply, setReply] = useState<Record<string, string>>({})
   const [menu, setMenu] = useState<string | null>(null)
   const [active, setActive] = useState<string | null>(null)
-  const [hoverPoint, setHoverPoint] = useState<{ id: string; x: number; y: number } | null>(null)
   const [positions, setPositions] = useState<Position[]>([])
   const [identity, setIdentity] = useState<{ id: string; displayName: string; avatar?: string } | null>(null)
   const composerRef = useRef<HTMLTextAreaElement>(null)
   const closeTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const locateRef = useRef<() => void>(() => {})
+  const itemsRef = useRef(items)
 
   useEffect(() => {
     void fetch('/api/discord/me').then((response) => response.ok ? response.json() : null).then((result: { user?: { id: string; displayName: string; avatar?: string } } | null) => setIdentity(result?.user ?? null)).catch(() => {})
@@ -53,7 +54,7 @@ export default function AnnotationLayer({ editorRef, containerRef, canvasId, can
       const anchorTop = rect.top - containerRect.top + container.scrollTop
       const top = Math.max(0, anchorTop - 12)
       const compact = containerRect.right - editorRect.right < 310
-      return [{ id: item.id, top, compact }]
+      return [{ id: item.id, top, compact, anchorLeft: rect.left - containerRect.left, anchorRight: rect.right - containerRect.left }]
     }).sort((a, b) => a.top - b.top)
     const gap = 158
     const activeIndex = active ? raw.findIndex((position) => position.id === active) : -1
@@ -68,6 +69,9 @@ export default function AnnotationLayer({ editorRef, containerRef, canvasId, can
     for (let index = activeIndex + 1; index < arranged.length; index++) arranged[index].top = Math.max(raw[index].top, arranged[index - 1].top + gap)
     setPositions(arranged)
   }, [active, containerRef, editorRef, items])
+
+  useEffect(() => { locateRef.current = locate }, [locate])
+  useEffect(() => { itemsRef.current = items }, [items])
 
   useLayoutEffect(() => { locate() }, [locate, canvasId])
   useEffect(() => {
@@ -84,17 +88,17 @@ export default function AnnotationLayer({ editorRef, containerRef, canvasId, can
   useEffect(() => {
     const reveal = () => {
       const id = window.location.hash.slice(1)
-      const item = items.find((candidate) => candidate.id === id)
+      const item = itemsRef.current.find((candidate) => candidate.id === id)
       if (!item) return
       setActive(id)
       const anchorId = item.anchorId ?? legacyAnchorId(item.id)
       const anchor = editorRef.current?.querySelector<HTMLElement>(`[data-annotation-id="${CSS.escape(id)}"]`) ?? (anchorId ? document.getElementById(anchorId) : null)
       anchor?.scrollIntoView({ behavior: 'smooth', block: 'center' })
-      requestAnimationFrame(locate)
+      requestAnimationFrame(() => locateRef.current())
     }
     reveal(); window.addEventListener('hashchange', reveal)
     return () => window.removeEventListener('hashchange', reveal)
-  }, [editorRef, items, locate])
+  }, [editorRef])
 
   useEffect(() => {
     const editor = editorRef.current
@@ -123,11 +127,11 @@ export default function AnnotationLayer({ editorRef, containerRef, canvasId, can
     }
     const move = (event: PointerEvent) => {
       const id = (event.target as Element).closest<HTMLElement>('[data-annotation-id]')?.dataset.annotationId
-      if (id) { if (closeTimer.current) clearTimeout(closeTimer.current); closeTimer.current = null; setActive(id); setHoverPoint({ id, x: event.clientX, y: event.clientY }); return }
+      if (id) { if (closeTimer.current) clearTimeout(closeTimer.current); closeTimer.current = null; setActive(id); return }
       if (closeTimer.current) clearTimeout(closeTimer.current)
-      closeTimer.current = setTimeout(() => { setActive(null); setHoverPoint(null); closeTimer.current = null }, 120)
+      closeTimer.current = setTimeout(() => { setActive(null); closeTimer.current = null }, 120)
     }
-    const leave = () => { if (closeTimer.current) clearTimeout(closeTimer.current); closeTimer.current = setTimeout(() => { setActive(null); setHoverPoint(null); closeTimer.current = null }, 120) }
+    const leave = () => { if (closeTimer.current) clearTimeout(closeTimer.current); closeTimer.current = setTimeout(() => { setActive(null); closeTimer.current = null }, 120) }
     const click = (event: Event) => {
       const id = (event.target as Element).closest<HTMLElement>('[data-annotation-id]')?.dataset.annotationId
       if (id) setActive(id)
@@ -223,14 +227,16 @@ export default function AnnotationLayer({ editorRef, containerRef, canvasId, can
       const item = items.find((candidate) => candidate.id === position.id)
       if (!item) return null
       const foreground = active === item.id || menu === item.id
-      const cursorAnchored = position.compact && foreground && hoverPoint?.id === item.id
-      const cursorX = hoverPoint ? hoverPoint.x - rootRect.left : 0
-      const cursorY = hoverPoint ? hoverPoint.y - rootRect.top + root.scrollTop : position.top
-      const left = cursorAnchored ? Math.max(4, Math.min(root.clientWidth - 296, cursorX + 2 + 292 <= root.clientWidth ? cursorX + 2 : cursorX - 294)) : trackLeft
-      const top = cursorAnchored ? Math.max(root.scrollTop + 4, Math.min(root.scrollTop + root.clientHeight - 170, cursorY - 16)) : position.top
-      return <div className={`annotation-thread ${position.compact ? 'is-compact is-over-text' : ''} ${foreground ? 'is-active' : ''}`} style={{ top, left }} key={item.id} onMouseEnter={() => { if (closeTimer.current) clearTimeout(closeTimer.current); closeTimer.current = null; setActive(item.id) }} onMouseLeave={() => { if (closeTimer.current) clearTimeout(closeTimer.current); closeTimer.current = setTimeout(() => { setActive(null); setHoverPoint(null); closeTimer.current = null }, 120) }}>
+      const compactLeft = position.anchorRight + 294 <= root.clientWidth
+        ? position.anchorRight + 2
+        : position.anchorLeft - 294 >= 4
+          ? position.anchorLeft - 294
+          : Math.max(4, Math.min(root.clientWidth - 296, position.anchorLeft))
+      const left = position.compact ? compactLeft : trackLeft
+      const top = foreground ? Math.max(root.scrollTop + 62, position.top) : position.top
+      return <div className={`annotation-thread ${position.compact ? 'is-compact is-over-text' : ''} ${foreground ? 'is-active' : ''}`} style={{ top, left }} key={item.id} onMouseEnter={() => { if (closeTimer.current) clearTimeout(closeTimer.current); closeTimer.current = null; setActive(item.id) }} onMouseLeave={() => { if (closeTimer.current) clearTimeout(closeTimer.current); closeTimer.current = setTimeout(() => { setActive(null); closeTimer.current = null }, 120) }}>
         <article className="annotation-card" id={item.id}>
-          <div className="annotation-meta"><Avatar initials={item.initials} src={item.avatar} name={item.author} color={item.author === 'You' ? 'ink' : 'sage'}/><div><strong>{item.author}</strong><time>{item.time}</time></div><div className="annotation-menu"><button aria-label="Annotation options" aria-expanded={menu === item.id} onClick={() => setMenu(menu === item.id ? null : item.id)}><MoreHorizontal size={16}/></button>{menu === item.id && <div role="menu"><button role="menuitem" onClick={() => void copyLink(item.id)}><Link2 size={13}/> Copy link</button>{canInteract && <button role="menuitem" onClick={() => saveAsResource(item)}><BookmarkPlus size={13}/> Save as resource</button>}{canInteract && <button role="menuitem" onClick={() => remove(item.id)}><Trash2 size={13}/> Delete thread</button>}</div>}</div></div>
+          <div className="annotation-meta"><Avatar initials={item.initials} src={item.avatar} name={item.author} color={item.author === 'You' ? 'ink' : 'sage'}/><div><strong>{item.author}</strong><time>{item.time}</time></div><div className="annotation-menu"><button aria-label="Annotation options" aria-expanded={menu === item.id} onClick={() => setMenu(menu === item.id ? null : item.id)}><MoreHorizontal size={16}/></button>{menu === item.id && <div role="menu"><button role="menuitem" onClick={() => void copyLink(item.id)}><Link2 size={13}/> Copy link</button>{canSaveResource && <button role="menuitem" onClick={() => saveAsResource(item)}><BookmarkPlus size={13}/> Save as resource</button>}{canInteract && <button role="menuitem" onClick={() => remove(item.id)}><Trash2 size={13}/> Delete thread</button>}</div>}</div></div>
           <p>{item.body}</p>
           {item.replies?.map((value, index) => { const replyValue = typeof value === 'string' ? { id: undefined, author: 'You', authorId: undefined, avatar: undefined, initials: 'YO', body: value } : value; const mine = replyValue.author === 'You' || Boolean(identity?.id && replyValue.authorId === identity.id); return <div className="annotation-reply" key={replyValue.id ?? `${item.id}-${index}`}><Avatar initials={replyValue.initials} src={replyValue.avatar} name={replyValue.author} color="ink"/><p><strong>{replyValue.author}</strong>{replyValue.body}</p>{canInteract && mine && <button className="annotation-reply-delete" onClick={() => removeReply(item.id, index)} aria-label="Delete annotation comment"><Trash2 size={12}/></button>}</div> })}
           {canInteract && <div className="annotation-reply-box"><input value={reply[item.id] ?? ''} onChange={(event) => setReply((current) => ({ ...current, [item.id]: event.target.value }))} onKeyDown={(event) => { if (event.key === 'Enter') addReply(item.id) }} placeholder="Reply…" aria-label={`Reply to ${item.author}`}/><button onClick={() => addReply(item.id)} disabled={!reply[item.id]?.trim()} aria-label="Send reply"><Send size={13}/></button><button onClick={() => void copyLink(item.id)} aria-label="Copy annotation link"><Link2 size={13}/></button></div>}

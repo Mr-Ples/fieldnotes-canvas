@@ -19,12 +19,14 @@ export default function CenterPanel() {
   const [identity, setIdentity] = useState<DiscordUser | null>(null)
   const [canModerate, setCanModerate] = useState(false)
   const [canUseCanvas, setCanUseCanvas] = useState(false)
+  const [memberAccess, setMemberAccess] = useState({ canvas: false, resources: false, discussion: false, llm: false, chat: false })
   const [accountMenu, setAccountMenu] = useState(false)
-  const [collaborationDialog, setCollaborationDialog] = useState<'settings' | 'invite' | null>(null)
+  const [collaborationDialog, setCollaborationDialog] = useState<'settings' | 'invite' | 'view' | null>(null)
   const [collaboration, setCollaboration] = useState<CollaborationSettings>(getCollaborationSettings)
-  const [invitePermissions, setInvitePermissions] = useState({ canvas: true, llm: true, chat: true })
+  const [invitePermissions, setInvitePermissions] = useState({ canvas: true, resources: true, discussion: true, llm: true, chat: true })
   const [creatingInvite, setCreatingInvite] = useState(false)
   const centerRef = useRef<HTMLElement>(null)
+  const accountMenuRef = useRef<HTMLDivElement>(null)
   const [activeCanvas, setActiveCanvas] = useState<Canvas>(() => {
     const stored = localStorage.getItem('fieldnotes:active-canvas')
     return stored ? JSON.parse(stored) as Canvas : canvases[0]
@@ -41,7 +43,7 @@ export default function CenterPanel() {
       const response = await fetch(`/api/canvases/${encodeURIComponent(activeCanvas.id)}/settings`, {
         method: 'POST',
         headers: { 'content-type': 'application/json', 'x-fieldnotes-owner-token': getOwnerToken() },
-        body: JSON.stringify({ settings: { locked: collaboration.chat === 'readonly', loginOnly: collaboration.chat === 'login', canvasMode: collaboration.canvas, llmMode: collaboration.llm } }),
+        body: JSON.stringify({ settings: { locked: collaboration.chat === 'readonly', loginOnly: collaboration.chat === 'login', canvasMode: collaboration.canvas, resourceMode: collaboration.resources, discussionMode: collaboration.discussion, llmMode: collaboration.llm } }),
       })
       if (!response.ok) throw new Error('Chat settings could not be saved')
       setCollaborationDialog(null)
@@ -70,38 +72,49 @@ export default function CenterPanel() {
     const select = (event: Event) => setActiveCanvas((event as CustomEvent<Canvas>).detail)
     const moderation = (event: Event) => setCanModerate(Boolean((event as CustomEvent<boolean>).detail))
     const access = (event: Event) => setCanUseCanvas(Boolean((event as CustomEvent<{ canvas: boolean }>).detail.canvas))
+    const permissions = (event: Event) => {
+      const detail = (event as CustomEvent<{ settings: { locked: boolean; loginOnly: boolean; canvasMode?: AccessMode; resourceMode?: AccessMode; discussionMode?: AccessMode; llmMode?: AccessMode }; access: typeof memberAccess }>).detail
+      setMemberAccess(detail.access)
+      setCollaboration({ canvas: detail.settings.canvasMode ?? 'public', resources: detail.settings.resourceMode ?? 'public', discussion: detail.settings.discussionMode ?? 'public', llm: detail.settings.llmMode ?? 'public', chat: detail.settings.locked ? 'readonly' : detail.settings.loginOnly ? 'login' : 'public' })
+    }
     const openPermissions = (event: Event) => {
-      const dialog = (event as CustomEvent<'settings' | 'invite'>).detail
+      const dialog = (event as CustomEvent<'settings' | 'invite' | 'view'>).detail
       if (dialog === 'settings') setCollaboration(getCollaborationSettings())
       setCollaborationDialog(dialog)
     }
+    const closeAccountMenu = (event: PointerEvent) => { if (!accountMenuRef.current?.contains(event.target as Node)) setAccountMenu(false) }
     window.addEventListener('fieldnotes:canvas-selected', select)
     window.addEventListener('fieldnotes:moderation-changed', moderation)
     window.addEventListener('fieldnotes:access-changed', access)
     window.addEventListener('fieldnotes:open-permissions', openPermissions)
-    return () => { window.removeEventListener('fieldnotes:canvas-selected', select); window.removeEventListener('fieldnotes:moderation-changed', moderation); window.removeEventListener('fieldnotes:access-changed', access); window.removeEventListener('fieldnotes:open-permissions', openPermissions) }
+    window.addEventListener('fieldnotes:permissions-changed', permissions)
+    window.addEventListener('pointerdown', closeAccountMenu)
+    return () => { window.removeEventListener('fieldnotes:canvas-selected', select); window.removeEventListener('fieldnotes:moderation-changed', moderation); window.removeEventListener('fieldnotes:access-changed', access); window.removeEventListener('fieldnotes:open-permissions', openPermissions); window.removeEventListener('fieldnotes:permissions-changed', permissions); window.removeEventListener('pointerdown', closeAccountMenu) }
   }, [])
 
   return <main ref={centerRef} className="center-panel" id="top">
     <header className="canvas-header">
       <div className="breadcrumbs"><span>Research</span><span>/</span><strong>{activeCanvas.title}</strong><ChevronDown size={14} /></div>
-      <div className="header-actions"><span className="saved-state"><Check size={13} /> {saved ? 'Saved' : 'Saving…'}</span><div className="account-actions"><DiscordIdentity compact onChange={setIdentity}/>{(identity || canModerate) && <IconButton label="Account and canvas options" onClick={() => setAccountMenu((open) => !open)}><MoreHorizontal size={18} /></IconButton>}{accountMenu && <div className="account-menu">
+      <div className="header-actions"><span className="saved-state"><Check size={13} /> {saved ? 'Saved' : 'Saving…'}</span><div className="account-actions" ref={accountMenuRef}><DiscordIdentity compact onChange={setIdentity}/>{(identity || canModerate) && <IconButton label="Account and canvas options" onClick={() => setAccountMenu((open) => !open)}><MoreHorizontal size={18} /></IconButton>}{accountMenu && <div className="account-menu">
         {canModerate && <button onClick={() => { setCollaborationDialog('invite'); setAccountMenu(false) }}><UserPlus size={14}/> Create invite link</button>}
         {canModerate && <button onClick={() => { setCollaboration(getCollaborationSettings()); setCollaborationDialog('settings'); setAccountMenu(false) }}><Settings size={14}/> Permissions</button>}
+        {!canModerate && <button onClick={() => { setCollaborationDialog('view'); setAccountMenu(false) }}><Settings size={14}/> My permissions</button>}
         {identity && <button className="danger" onClick={() => { setAccountMenu(false); void signOutDiscord() }}><LogOut size={14}/> Logout</button>}
       </div>}</div></div>
     </header>
 
-    {collaborationDialog && <div className="collaboration-backdrop" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) setCollaborationDialog(null) }}><section className="collaboration-dialog" role="dialog" aria-modal="true" aria-label={collaborationDialog === 'invite' ? 'Create invite link' : 'Permissions'}>
-      <div className="collaboration-dialog-head"><div><span className="eyebrow">Permissions</span><h2>{collaborationDialog === 'invite' ? 'Create invite link' : 'Permissions'}</h2></div><IconButton label="Close" onClick={() => setCollaborationDialog(null)}><X size={16}/></IconButton></div>
+    {collaborationDialog && <div className="collaboration-backdrop" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) setCollaborationDialog(null) }}><section className="collaboration-dialog" role="dialog" aria-modal="true" aria-label={collaborationDialog === 'invite' ? 'Create invite link' : collaborationDialog === 'view' ? 'My permissions' : 'Permissions'}>
+      <div className="collaboration-dialog-head"><div><span className="eyebrow">Permissions</span><h2>{collaborationDialog === 'invite' ? 'Create invite link' : collaborationDialog === 'view' ? 'My permissions' : 'Permissions'}</h2></div><IconButton label="Close" onClick={() => setCollaborationDialog(null)}><X size={16}/></IconButton></div>
       {collaborationDialog === 'settings' ? <div className="permission-list">
-        <PermissionSelect label="Canvas" description="Notes, annotations, and resources" value={collaboration.canvas} onChange={(canvas) => setCollaboration({ ...collaboration, canvas })}/>
+        <PermissionSelect label="Canvas" description="Notes and annotations" value={collaboration.canvas} onChange={(canvas) => setCollaboration({ ...collaboration, canvas })}/>
+        <PermissionSelect label="Resources" description="Add and save canvas resources" value={collaboration.resources} onChange={(resources) => setCollaboration({ ...collaboration, resources })}/>
+        <PermissionSelect label="Discussion" description="Comments below the canvas tabs" value={collaboration.discussion} onChange={(discussion) => setCollaboration({ ...collaboration, discussion })}/>
         <PermissionSelect label="LLM chat" description="Ask questions and suggest saved answers" value={collaboration.llm} onChange={(llm) => setCollaboration({ ...collaboration, llm })}/>
         <PermissionSelect label="Discord chat" description="Discussion comments and connected chat" value={collaboration.chat} onChange={(chat) => setCollaboration({ ...collaboration, chat })}/>
-      </div> : <div className="permission-list">
-        {(['canvas', 'llm', 'chat'] as const).map((key) => <label className="invite-permission" key={key}><span><strong>{key === 'llm' ? 'LLM chat' : key === 'chat' ? 'Discord chat' : 'Canvas'}</strong><small>{key === 'canvas' ? 'Suggest edits, annotations, and resources' : key === 'llm' ? 'Use the canvas LLM chat' : 'Post discussion comments and chat messages'}</small></span><input type="checkbox" checked={invitePermissions[key]} onChange={(event) => setInvitePermissions({ ...invitePermissions, [key]: event.target.checked })}/></label>)}
-      </div>}
-      <div className="collaboration-dialog-actions"><button className="secondary" onClick={() => setCollaborationDialog(null)}>Cancel</button><button onClick={() => void (collaborationDialog === 'invite' ? createPermissionInvite() : savePermissions())} disabled={creatingInvite}>{creatingInvite ? 'Creating…' : collaborationDialog === 'invite' ? 'Create and copy link' : 'Save settings'}</button></div>
+      </div> : collaborationDialog === 'invite' ? <div className="permission-list">
+        {(['canvas', 'resources', 'discussion', 'llm', 'chat'] as const).map((key) => <label className="invite-permission" key={key}><span><strong>{permissionLabel(key)}</strong><small>{permissionDescription(key)}</small></span><input type="checkbox" checked={invitePermissions[key]} onChange={(event) => setInvitePermissions({ ...invitePermissions, [key]: event.target.checked })}/></label>)}
+      </div> : <div className="permission-list">{(['canvas', 'resources', 'discussion', 'llm', 'chat'] as const).map((key) => <div className="permission-readout" key={key}><span><strong>{permissionLabel(key)}</strong><small>{permissionDescription(key)}</small></span><b className={memberAccess[key] ? 'allowed' : ''}>{memberAccess[key] ? 'Allowed' : 'Read only'}</b></div>)}</div>}
+      <div className="collaboration-dialog-actions"><button className="secondary" onClick={() => setCollaborationDialog(null)}>{collaborationDialog === 'view' ? 'Close' : 'Cancel'}</button>{collaborationDialog !== 'view' && <button onClick={() => void (collaborationDialog === 'invite' ? createPermissionInvite() : savePermissions())} disabled={creatingInvite}>{creatingInvite ? 'Creating…' : collaborationDialog === 'invite' ? 'Create and copy link' : 'Save settings'}</button>}</div>
     </section></div>}
 
     <div className="document-head">
@@ -120,15 +133,24 @@ export default function CenterPanel() {
       <TabButton active={tab === 'notes'} onClick={() => setTab('notes')}>Notes</TabButton>
       <TabButton active={tab === 'resources'} onClick={() => setTab('resources')}>Resources <span className="count">4</span></TabButton>
     </div>
-    {tab === 'notes' ? <Notes key={activeCanvas.id} canvasId={activeCanvas.id} setSaved={setSaved} containerRef={centerRef} canInteract={canUseCanvas} /> : <Resources canInteract={canUseCanvas} />}
+    {tab === 'notes' ? <Notes key={activeCanvas.id} canvasId={activeCanvas.id} setSaved={setSaved} containerRef={centerRef} canInteract={canUseCanvas} canSaveResource={memberAccess.resources} /> : <Resources canInteract={memberAccess.resources} />}
+    <div className="discussion-view"><Comments canInteract={memberAccess.discussion} canSaveResource={memberAccess.resources} /></div>
   </main>
+}
+
+function permissionLabel(key: 'canvas' | 'resources' | 'discussion' | 'llm' | 'chat') {
+  return key === 'resources' ? 'Resources' : key === 'discussion' ? 'Discussion' : key === 'llm' ? 'LLM chat' : key === 'chat' ? 'Discord chat' : 'Canvas'
+}
+
+function permissionDescription(key: 'canvas' | 'resources' | 'discussion' | 'llm' | 'chat') {
+  return key === 'resources' ? 'Add and save canvas resources' : key === 'discussion' ? 'Post comments below the canvas' : key === 'llm' ? 'Use the canvas LLM chat' : key === 'chat' ? 'Post connected Discord chat messages' : 'Suggest edits and annotations'
 }
 
 function PermissionSelect({ label, description, value, onChange }: { label: string; description: string; value: AccessMode; onChange: (value: AccessMode) => void }) {
   return <label className="permission-select"><span><strong>{label}</strong><small>{description}</small></span><select value={value} onChange={(event) => onChange(event.target.value as AccessMode)}><option value="public">Anyone can suggest</option><option value="login">Login required</option><option value="readonly">Admin + invite only</option></select></label>
 }
 
-function Notes({ canvasId, setSaved, containerRef, canInteract }: { canvasId: string; setSaved: (value: boolean) => void; containerRef: RefObject<HTMLElement | null>; canInteract: boolean }) {
+function Notes({ canvasId, setSaved, containerRef, canInteract, canSaveResource }: { canvasId: string; setSaved: (value: boolean) => void; containerRef: RefObject<HTMLElement | null>; canInteract: boolean; canSaveResource: boolean }) {
   const saveTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined)
   const editor = useRef<HTMLElement>(null)
   useEffect(() => {
@@ -179,7 +201,7 @@ function Notes({ canvasId, setSaved, containerRef, canInteract }: { canvasId: st
       <p>The best systems support a loop: notice, explore, make, step away, return. <mark id="annotation-2" onClick={() => { window.location.hash = 'annotation-comment-2' }}>The return is as important as the capture.</mark></p>
       <p className="empty-paragraph">Continue writing, or type “/” for commands…</p>
     </article>
-    <AnnotationLayer editorRef={editor} containerRef={containerRef} canvasId={canvasId} canInteract={canInteract} onDocumentChange={() => {
+    <AnnotationLayer editorRef={editor} containerRef={containerRef} canvasId={canvasId} canInteract={canInteract} canSaveResource={canSaveResource} onDocumentChange={() => {
       if (editor.current) localStorage.setItem(`fieldnotes:notes-html:${canvasId}`, editor.current.innerHTML)
     }}/>
   </div>
@@ -245,11 +267,10 @@ function Resources({ canInteract }: { canInteract: boolean }) {
         <div className="resource-actions"><CopyLinkButton target={resource.id} /><IconButton label="Resource options"><MoreHorizontal size={18}/></IconButton></div>
       </article>)}
     </section>
-    <Comments canInteract={canInteract} />
   </div>
 }
 
-function Comments({ canInteract }: { canInteract: boolean }) {
+function Comments({ canInteract, canSaveResource }: { canInteract: boolean; canSaveResource: boolean }) {
   const [text, setText] = useState('')
   const [items, setItems] = useLocalStorage('fieldnotes:comments', comments)
   const [identity, setIdentity] = useState<{ id: string; displayName: string; avatar?: string } | null>(null)
@@ -287,12 +308,12 @@ function Comments({ canInteract }: { canInteract: boolean }) {
   const remove = (id: string) => setItems(items.flatMap((item) => item.id === id ? [] : [{ ...item, replies: item.replies?.filter((replyItem) => replyItem.id !== id) }]))
   return <section className="comments-section"><div className="section-title"><h2>Discussion <span>{items.length}</span></h2></div>
     {canInteract && <div className="comment-compose"><Avatar initials={currentInitials} src={identity?.avatar} name={currentAuthor} color="ink"/><div><textarea value={text} onChange={(event) => setText(event.target.value)} onKeyDown={handleKeyDown} placeholder="Add to the discussion…"/><button onClick={add} disabled={!text.trim()}><Send size={14}/> Comment</button></div></div>}
-    {items.map((comment) => <CommentItem key={comment.id} comment={comment} currentUserId={identity?.id} currentName={currentAuthor} currentAvatar={identity?.avatar} canInteract={canInteract} onReply={reply} onSave={saveAsResource} onDelete={remove}/>)}</section>
+    {items.map((comment) => <CommentItem key={comment.id} comment={comment} currentUserId={identity?.id} currentName={currentAuthor} currentAvatar={identity?.avatar} canInteract={canInteract} canSaveResource={canSaveResource} onReply={reply} onSave={saveAsResource} onDelete={remove}/>)}</section>
 }
 
-function CommentItem({ comment, currentUserId, currentName, currentAvatar, canInteract, onReply, onSave, onDelete }: { comment: Comment; currentUserId?: string; currentName: string; currentAvatar?: string; canInteract: boolean; onReply: (id: string) => void; onSave: (comment: Comment) => void; onDelete: (id: string) => void }) {
+function CommentItem({ comment, currentUserId, currentName, currentAvatar, canInteract, canSaveResource, onReply, onSave, onDelete }: { comment: Comment; currentUserId?: string; currentName: string; currentAvatar?: string; canInteract: boolean; canSaveResource: boolean; onReply: (id: string) => void; onSave: (comment: Comment) => void; onDelete: (id: string) => void }) {
   const mine = comment.author === 'You' || Boolean(currentUserId && comment.authorId === currentUserId)
   const shownName = mine && comment.author === 'You' && currentUserId ? currentName : comment.author
   const shownAvatar = mine && comment.author === 'You' ? currentAvatar : comment.avatar
-  return <article className="comment deep-link-target" id={comment.id}><Avatar initials={comment.initials} src={shownAvatar} name={shownName} color={mine ? 'ink' : 'clay'}/><div className="comment-body"><div><strong>{shownName}</strong><time>{comment.time}</time></div><p>{comment.body}</p><div className="comment-actions">{canInteract && <button onClick={() => onReply(comment.id)}><Reply size={13}/> Reply</button>}{canInteract && <button onClick={() => onSave(comment)}><FileText size={13} /> Save as resource</button>}<CopyLinkButton target={comment.id}/>{canInteract && mine && <button className="text-red-700" onClick={() => onDelete(comment.id)}><Trash2 size={13}/> Delete</button>}</div>{comment.replies?.map((reply) => <CommentItem key={reply.id} comment={reply} currentUserId={currentUserId} currentName={currentName} currentAvatar={currentAvatar} canInteract={canInteract} onReply={onReply} onSave={onSave} onDelete={onDelete}/>)}</div></article>
+  return <article className="comment deep-link-target" id={comment.id}><Avatar initials={comment.initials} src={shownAvatar} name={shownName} color={mine ? 'ink' : 'clay'}/><div className="comment-body"><div><strong>{shownName}</strong><time>{comment.time}</time></div><p>{comment.body}</p><div className="comment-actions">{canInteract && <button onClick={() => onReply(comment.id)}><Reply size={13}/> Reply</button>}{canSaveResource && <button onClick={() => onSave(comment)}><FileText size={13} /> Save as resource</button>}<CopyLinkButton target={comment.id}/>{canInteract && mine && <button className="text-red-700" onClick={() => onDelete(comment.id)}><Trash2 size={13}/> Delete</button>}</div>{comment.replies?.map((reply) => <CommentItem key={reply.id} comment={reply} currentUserId={currentUserId} currentName={currentName} currentAvatar={currentAvatar} canInteract={canInteract} canSaveResource={canSaveResource} onReply={onReply} onSave={onSave} onDelete={onDelete}/>)}</div></article>
 }

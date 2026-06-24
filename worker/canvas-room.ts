@@ -40,6 +40,8 @@ export type ChatSettings = {
   locked: boolean
   loginOnly: boolean
   canvasMode: 'public' | 'login' | 'readonly'
+  resourceMode: 'public' | 'login' | 'readonly'
+  discussionMode: 'public' | 'login' | 'readonly'
   llmMode: 'public' | 'login' | 'readonly'
 }
 
@@ -90,9 +92,9 @@ export class CanvasRoom extends DurableObject<Env> {
   async getSettings(): Promise<ChatSettings> {
     const value = this.ctx.storage.sql.exec<{ value: string }>("SELECT value FROM config WHERE key = 'settings'").toArray()[0]?.value
     if (value) {
-      try { return { canvasMode: 'public', llmMode: 'public', ...JSON.parse(value) } as ChatSettings } catch {}
+      try { return { canvasMode: 'public', resourceMode: 'public', discussionMode: 'public', llmMode: 'public', ...JSON.parse(value) } as ChatSettings } catch {}
     }
-    return { locked: false, loginOnly: false, canvasMode: 'public', llmMode: 'public' }
+    return { locked: false, loginOnly: false, canvasMode: 'public', resourceMode: 'public', discussionMode: 'public', llmMode: 'public' }
   }
 
   async setSettings(settings: ChatSettings): Promise<void> {
@@ -112,7 +114,7 @@ export class CanvasRoom extends DurableObject<Env> {
     return Boolean(row?.found)
   }
 
-  async verifyInvitePermission(token: string | null, permission: 'canvas' | 'llm' | 'chat'): Promise<boolean> {
+  async verifyInvitePermission(token: string | null, permission: 'canvas' | 'resources' | 'discussion' | 'llm' | 'chat'): Promise<boolean> {
     if (!token) return false
     const row = this.ctx.storage.sql.exec<{ permissions: string }>('SELECT permissions FROM invites WHERE token = ?', token).toArray()[0]
     if (!row) return false
@@ -137,10 +139,11 @@ export class CanvasRoom extends DurableObject<Env> {
     return true
   }
 
-  async canUse(permission: 'canvas' | 'llm', userId: string, ownerToken: string | null, inviteToken: string | null): Promise<boolean> {
+  async canUse(permission: 'canvas' | 'resources' | 'discussion' | 'llm', userId: string, ownerToken: string | null, inviteToken: string | null): Promise<boolean> {
     if (ownerToken && await this.claimOwnerToken(ownerToken)) return true
     if (await this.verifyInvitePermission(inviteToken, permission)) return true
-    const mode = (await this.getSettings())[permission === 'canvas' ? 'canvasMode' : 'llmMode']
+    const modeKey = permission === 'canvas' ? 'canvasMode' : permission === 'resources' ? 'resourceMode' : permission === 'discussion' ? 'discussionMode' : 'llmMode'
+    const mode = (await this.getSettings())[modeKey]
     return mode === 'public' || mode === 'login' && !userId.startsWith('guest:')
   }
 
