@@ -131,7 +131,7 @@
   .comment-compose > div { @apply flex flex-1 flex-col items-end rounded-lg border border-stone-300 bg-white p-2; }
   .comment-compose textarea { @apply h-12 w-full resize-none border-0 text-[11px] outline-0; }
   .comment-compose button { @apply flex cursor-pointer items-center gap-1 rounded-md border-0 bg-forest px-2 py-1 text-[9px] text-white; }
-  .avatar { @apply grid size-7 shrink-0 place-items-center rounded-full text-[9px] font-bold; }
+  .avatar { @apply grid size-7 shrink-0 place-items-center !z-10 rounded-full text-[9px] font-bold; }
   .avatar-sage { @apply bg-emerald-100 text-emerald-900; } .avatar-clay { @apply bg-orange-100 text-orange-900; } .avatar-ink { @apply bg-forest text-white; }
   .comment { @apply py-3; } .comment-body { @apply flex-1; }
   .comment-body > div:first-child { @apply flex items-center gap-2 text-[10px]; }
