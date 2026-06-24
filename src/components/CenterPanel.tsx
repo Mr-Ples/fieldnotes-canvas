@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, type CSSProperties, type FormEvent, type KeyboardEvent, type RefObject } from 'react'
-import { Bold, Check, ChevronDown, Code2, Eye, EyeClosed, File, FileText, Heading2, Italic, Link2, List, LogOut, MessageCircle, MoreHorizontal, Plus, Quote, Reply, Send, Settings, Trash2, Upload, Video, X } from 'lucide-react'
+import { Bold, ChevronDown, Code2, Eye, EyeClosed, File, FileText, Heading2, Italic, Link2, List, LogOut, MessageCircle, MoreHorizontal, Plus, Quote, Reply, Send, Settings, Trash2, Upload, Video, X } from 'lucide-react'
 import { canvases, comments, projects, resources, type Canvas, type Comment } from '../data'
 import { Avatar, CopyLinkButton, IconButton, TabButton } from './Primitives'
 import { useLocalStorage } from '../hooks/useLocalStorage'
@@ -15,7 +15,7 @@ export default function CenterPanel() {
   const [tag, setTag] = useState('')
   const [addingTag, setAddingTag] = useState(false)
   const [tags, setTags] = useLocalStorage('fieldnotes:tags', ['design research', 'attention', 'interfaces'])
-  const [saved, setSaved] = useState(true)
+  const [, setSaved] = useState(true)
   const [identity, setIdentity] = useState<DiscordUser | null>(null)
   const [canModerate, setCanModerate] = useState(false)
   const [canUseCanvas, setCanUseCanvas] = useState(false)
@@ -148,15 +148,12 @@ export default function CenterPanel() {
   }, [])
 
   return <main ref={centerRef} className="center-panel" id="top">
-    <header className="canvas-header">
-      <div className="breadcrumbs"><span>Research</span><span>/</span><strong>{activeCanvas.title}</strong><ChevronDown size={14} /></div>
-      <div className="header-actions"><span className="saved-state"><Check size={13} /> {saved ? 'Saved' : 'Saving…'}</span><div className="account-actions" ref={accountMenuRef}><DiscordIdentity compact onChange={setIdentity}/>{(identity || canModerate) && <IconButton label="Account and canvas options" onClick={() => setAccountMenu((open) => !open)}><MoreHorizontal size={18} /></IconButton>}{accountMenu && <div className="account-menu">
+    <div className="canvas-account-control"><div className="account-actions" ref={accountMenuRef}><DiscordIdentity compact onChange={setIdentity}/>{(identity || canModerate) && <IconButton label="Account and canvas options" onClick={() => setAccountMenu((open) => !open)}><MoreHorizontal size={18} /></IconButton>}{accountMenu && <div className="account-menu">
         {canModerate && <button onClick={() => { setCollaborationScope({ type: 'canvas', id: activeCanvas.id }); setCollaborationDialog('invite'); setAccountMenu(false) }}><Link2 size={14}/> Create invite link</button>}
         {canModerate && <button onClick={() => { setCollaborationScope({ type: 'canvas', id: activeCanvas.id }); setCollaboration(getCollaborationSettings()); setCollaborationDialog('settings'); setAccountMenu(false) }}><Settings size={14}/> Permissions</button>}
         {!canModerate && <button onClick={() => { setCollaborationScope({ type: 'canvas', id: activeCanvas.id }); setCollaborationDialog('view'); setAccountMenu(false) }}><Settings size={14}/> My permissions</button>}
         {identity && <button className="danger" onClick={() => { setAccountMenu(false); void signOutDiscord() }}><LogOut size={14}/> Logout</button>}
       </div>}</div></div>
-    </header>
 
     {collaborationDialog && <div className="collaboration-backdrop" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) setCollaborationDialog(null) }}><section className="collaboration-dialog" role="dialog" aria-modal="true" aria-label={`${dialogPurpose} for ${scopeName}`}>
       <div className="collaboration-dialog-head"><div><span className="eyebrow">{collaborationScope.type === 'project' ? 'Project' : 'Canvas'} · {scopeName}{collaborationScope.type === 'project' ? ' · All canvases' : ''}</span><h2>{dialogPurpose}</h2></div><IconButton label="Close" onClick={() => setCollaborationDialog(null)}><X size={16}/></IconButton></div>

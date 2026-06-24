@@ -46,13 +46,23 @@ export default function App() {
     event.preventDefault()
     const startX = event.clientX
     const startWidth = side === 'left' ? leftWidth : rightWidth
+    let moved = false
     const move = (pointer: PointerEvent) => {
       const delta = pointer.clientX - startX
+      if (Math.abs(delta) > 3) moved = true
       const maxWidth = side === 'right' ? MAX_RIGHT_PANEL_WIDTH : MAX_PANEL_WIDTH
       const width = Math.max(280, Math.min(maxWidth, startWidth + (side === 'left' ? delta : -delta)))
       if (side === 'left') setLeftWidth(width); else setRightWidth(width)
     }
-    const stop = () => { window.removeEventListener('pointermove', move); window.removeEventListener('pointerup', stop); document.body.classList.remove('resizing-panels') }
+    const stop = () => {
+      window.removeEventListener('pointermove', move)
+      window.removeEventListener('pointerup', stop)
+      document.body.classList.remove('resizing-panels')
+      if (!moved) {
+        if (side === 'left') setLeftExpanded(false)
+        else setRightExpanded(false)
+      }
+    }
     document.body.classList.add('resizing-panels'); window.addEventListener('pointermove', move); window.addEventListener('pointerup', stop, { once: true })
   }
 
@@ -86,17 +96,22 @@ export default function App() {
   const renderView = (tab: DockTabId, location: DockLocation) => tab === 'canvases' ? <CanvasPanel margin={location === 'margin'} onDock={location === 'margin' ? () => moveTab('canvases', 'left', layout.left.length) : undefined}/> : tab === 'chat' ? <ChatPanel/> : tab === 'discord' ? <DiscordPanel/> : <AnnotationsPanel/>
   const panel = (location: 'left' | 'right') => {
     const open = location === 'left' ? leftOpen : rightOpen
-    return <aside className={`side-panel ${location}-panel`}><div className="side-panel-inner"><div className="dock-panel-heading">{location === 'left' ? <a className="brand" href="#top"><span className="brand-mark">F</span><span>Fieldnotes</span></a> : <span>Workspace</span>}</div><DockTabs tabs={layout[location]} active={active[location]} location={location} annotationCount={annotationCount} draggingTab={draggingTab} onDragChange={setDraggingTab} onActivate={(tab) => setActiveTab(location, tab)} onDropTab={moveTab}/>{layout[location].map((tab) => <DockView key={tab} show={active[location] === tab}>{renderView(tab, location)}</DockView>)}</div>{open && <div className={`panel-resizer ${location}-resizer`} role="separator" aria-label={`Resize ${location} sidebar`} aria-orientation="vertical" onPointerDown={(event) => startResize(location, event)}/>}</aside>
+    const close = () => {
+      if (window.matchMedia('(max-width: 820px)').matches) setMobilePanel('center')
+      else if (location === 'left') setLeftExpanded(false)
+      else setRightExpanded(false)
+    }
+    return <aside className={`side-panel ${location}-panel`}><div className="side-panel-inner"><div className="panel-tab-row"><DockTabs tabs={layout[location]} active={active[location]} location={location} annotationCount={annotationCount} draggingTab={draggingTab} onDragChange={setDraggingTab} onActivate={(tab) => setActiveTab(location, tab)} onDropTab={moveTab}/><button className="panel-close-button" onClick={close} aria-label={`Close ${location} panel`} title={`Close ${location} panel`}>{location === 'left' ? <PanelLeftClose size={16}/> : <PanelRightClose size={16}/>}</button></div>{layout[location].map((tab) => <DockView key={tab} show={active[location] === tab}>{renderView(tab, location)}</DockView>)}</div>{open && <div className={`panel-resizer ${location}-resizer`} role="separator" aria-label={`Resize or close ${location} sidebar`} aria-orientation="vertical" title={`Drag to resize or click to close ${location} sidebar`} onPointerDown={(event) => startResize(location, event)}/>}</aside>
   }
 
   return <div className={`app-shell ${leftOpen ? '' : 'left-collapsed'} ${rightOpen ? '' : 'right-collapsed'} ${marginOpen ? 'margin-open' : ''} ${draggingTab ? 'tab-dragging' : ''} ${draggingTab === 'canvases' ? 'tab-dragging-canvases' : ''}`} data-mobile-panel={mobilePanel} style={panelStyle}>
     {panel('left')}
-    {layout.left.length > 0 && <button className="desktop-panel-toggle left-toggle" onClick={() => setLeftExpanded((open) => !open)} aria-label={leftOpen ? 'Close left panel' : 'Open left panel'}><PanelLeftClose size={16}/></button>}
+    {layout.left.length > 0 && !leftOpen && <button className="panel-edge-opener left-edge-opener" onClick={() => setLeftExpanded(true)} aria-label="Open left panel" title="Open left panel"/>}
     {!leftOpen && <DockDropEdge location="left" draggingTab={draggingTab} onDragChange={setDraggingTab} onDropTab={moveTab}/>} 
     <div className="margin-dock-drop" aria-label="Drop Canvases in the document margin" onDragOver={(event) => { if (draggingTab !== 'canvases') return; event.preventDefault(); event.currentTarget.classList.add('is-over') }} onDragLeave={(event) => event.currentTarget.classList.remove('is-over')} onDrop={(event) => { if (draggingTab !== 'canvases') return; event.preventDefault(); event.currentTarget.classList.remove('is-over'); const tab = event.dataTransfer.getData('application/x-fieldnotes-tab') as DockTabId; setDraggingTab(null); if (tab === 'canvases') moveTab(tab, 'margin', 0) }}><span>Canvases margin</span></div>
     <aside className="canvas-margin-dock">{layout.margin.map((tab) => <DockView key={tab} show={active.margin === tab}>{renderView(tab, 'margin')}</DockView>)}</aside>
     <CenterPanel/>
-    {layout.right.length > 0 && <button className="desktop-panel-toggle right-toggle" onClick={() => setRightExpanded((open) => !open)} aria-label={rightOpen ? 'Close right panel' : 'Open right panel'}><PanelRightClose size={16}/></button>}
+    {layout.right.length > 0 && !rightOpen && <button className="panel-edge-opener right-edge-opener" onClick={() => setRightExpanded(true)} aria-label="Open right panel" title="Open right panel"/>}
     {!rightOpen && <DockDropEdge location="right" draggingTab={draggingTab} onDragChange={setDraggingTab} onDropTab={moveTab}/>} {panel('right')}
     <nav className="mobile-nav" aria-label="Canvas areas"><button className={mobilePanel === 'left' ? 'active' : ''} onClick={() => setMobilePanel('left')}><Files size={19}/><span>Canvases</span></button><button className={mobilePanel === 'center' ? 'active' : ''} onClick={() => setMobilePanel('center')}><NotebookPen size={19}/><span>Notes</span></button><button className={mobilePanel === 'right' ? 'active' : ''} onClick={() => setMobilePanel('right')}><MessageSquare size={19}/><span>Activity</span></button></nav>
     <PopupHost/>
