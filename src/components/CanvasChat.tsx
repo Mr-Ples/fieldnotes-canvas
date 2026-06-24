@@ -1,6 +1,6 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState, type MouseEvent as ReactMouseEvent } from 'react'
 import { createPortal } from 'react-dom'
-import { BookmarkPlus, Check, ExternalLink, Forward, Link2, MessageCircleReply, MoreHorizontal, Paperclip, RefreshCw, Send, Smile, SmilePlus, Trash2, Unplug } from 'lucide-react'
+import { BookmarkPlus, Check, ExternalLink, Forward, Link2, Lock, MessageCircleReply, MoreHorizontal, Paperclip, RefreshCw, Send, Smile, SmilePlus, Trash2, Unplug, UserCheck, UserPlus } from 'lucide-react'
 import { Virtuoso, type VirtuosoHandle } from 'react-virtuoso'
 import { getDeviceId, getGuestName, getOwnerToken, setGuestName as saveGuestName } from '../services/api'
 import DiscordConnectModal from './DiscordConnectModal'
@@ -22,7 +22,7 @@ const EMOJI_GROUPS = [
   ['People', '👋 🤚 🖐️ ✋ 🖖 👌 🤌 🤏 ✌️ 🤞 🫰 🤟 🤘 🤙 👈 👉 👆 👇 ☝️ 👍 👎 ✊ 👊 🤛 🤜 👏 🙌 🫶 👐 🤲 🤝 🙏 ✍️ 💅 🤳 💪 🦾 🦿 🦵 🦶 👂 👃 🧠 🫀 🫁 🦷 👀 👁️ 👅 👄'],
   ['Nature', '🐶 🐱 🐭 🐹 🐰 🦊 🐻 🐼 🐨 🐯 🦁 🐮 🐷 🐸 🐵 🙈 🙉 🙊 🐔 🐧 🐦 🐤 🦄 🐝 🪱 🐛 🦋 🐌 🐞 🐜 🪲 🕷️ 🦂 🐢 🐍 🦎 🐙 🦑 🦀 🐠 🐟 🐬 🐳 🌸 🌹 🌺 🌻 🌼 🌷 🌱 🌲 🌳 🌴 🌵 🍀 🍁 🍂 🍃'],
   ['Food', '🍏 🍎 🍐 🍊 🍋 🍌 🍉 🍇 🍓 🫐 🍈 🍒 🍑 🥭 🍍 🥥 🥝 🍅 🥑 🥦 🥬 🥒 🌶️ 🌽 🥕 🫒 🧄 🧅 🥔 🍠 🥐 🥯 🍞 🥖 🧀 🥚 🍳 🧇 🥞 🍔 🍟 🍕 🌭 🥪 🌮 🌯 🥗 🍝 🍜 🍲 🍣 🍱 🍛 🍚 🍰 🎂 🍪 🍩 🍫 🍿 ☕️ 🍺 🍷'],
-  ['Activities', '⚽️ 🏀 🏈 ⚾️ 🥎 🎾 🏐 🏉 🥏 🎱 🪀 🏓 🏸 🏒 🥅 ⛳️ 🛹 🛼 🎿 ⛷️ 🏂 🪂 🏋️ 🤼 🤸 ⛹️ 🤺 🤾 🏊 🚴 🧗 🎮 🕹️ 🎲 ♟️ 🎯 🎳 🎨 🎭 🎤 🎧 🎼 🎹 🥁 🎷 🎺 🎸 🎻'],
+  ['Activities', '⚽️ 🏀 🏈 ⚾️ 🥎 🎾 🏐 🏉 🥏 🎱 🪀 🏓 🏸 🏒 🥅 ⛳️ skateboard 🛼 🎿 ⛷️ 🏂 🪂 🏋️ 🤼 🤸 ⛹️ 🤺 🤾 🏊 🚴 🧗 🎮 🕹️ 🎲 ♟️ 🎯 🎳 🎨 🎭 🎤 🎧 🎼 🎹 🥁 🎷 🎺 🎸 🎻'],
   ['Objects', '⌚️ 📱 💻 ⌨️ 🖥️ 🖨️ 🖱️ 📷 📸 📹 🎥 📞 ☎️ 📺 📻 ⏰ ⌛️ 💡 🔦 🕯️ 🧯 💸 💵 💳 💎 ⚖️ 🧰 🔧 🔨 ⚒️ 🛠️ ⛏️ 🔩 ⚙️ 🧱 ⛓️ 🧲 🔫 💣 🧨 🪓 🔪 🗡️ 🛡️ 🚬 ⚰️ 🔮 📿 💈 🔭 🔬 💊 🩹 🩺 🔑 🗝️ 🚪 🪑 🛋️ 🛏️'],
   ['Symbols', '❤️ 🧡 💛 💚 💙 💜 🖤 🤍 🤎 💔 ❣️ 💕 💞 💓 💗 💖 💘 💝 💟 ☮️ ✝️ ☪️ 🕉️ ☸️ ✡️ 🔯 🕎 ☯️ ☦️ 🛐 ⛎ ♈️ ♉️ ♊️ ♋️ ♌️ ♍️ ♎️ ♏️ ♐️ ♑️ ♒️ ♓️ 🆔 ⚛️ ☢️ ☣️ 📴 📳 🈶 🈚️ 🉐️ ㊙️ ㊗️ 🆘 ❌ ⭕️ 🛑 ⛔️ 💯 💢 ♨️ 🚷 🚯 🚳 🚱 🔞 📵 ⚠️ ✅ ❎ 🌐 💠 Ⓜ️'],
 ] as const
@@ -53,6 +53,12 @@ export default function CanvasChat() {
   const [connectOpen, setConnectOpen] = useState(() => new URL(window.location.href).searchParams.has('discordConnect'))
   const [headerMenu, setHeaderMenu] = useState<{ top: number; left: number }>()
   const [reactionHover, setReactionHover] = useState<{ messageId: string; emoji: string; participants: string[]; top: number; left: number }>()
+  
+  // Custom chat settings states
+  const [settings, setSettings] = useState<{ locked: boolean; loginOnly: boolean }>({ locked: false, loginOnly: false })
+  const [isInviteValid, setIsInviteValid] = useState(false)
+  const [inviteState, setInviteState] = useState<'idle' | 'creating' | 'copied'>('idle')
+
   const list = useRef<VirtuosoHandle>(null)
   const linkedMessageHandled = useRef(false)
   const socketRef = useRef<WebSocket | undefined>(undefined)
@@ -64,6 +70,75 @@ export default function CanvasChat() {
   const storage = useRef(new CloudinaryMediaStorage())
   const ownerToken = useState(getOwnerToken)[0]
   const byId = useMemo(() => new Map(messages.map((message) => [message.id, message])), [messages])
+
+  const [inviteToken, setInviteToken] = useState(() => {
+    const url = new URL(window.location.href)
+    return url.searchParams.get('invite') || localStorage.getItem('fieldnotes:invite-token:' + activeCanvas().id) || ''
+  })
+
+  useEffect(() => {
+    const url = new URL(window.location.href)
+    const urlToken = url.searchParams.get('invite')
+    if (urlToken) {
+      localStorage.setItem('fieldnotes:invite-token:' + canvas.id, urlToken)
+      url.searchParams.delete('invite')
+      window.history.replaceState({}, '', url.toString())
+      setInviteToken(urlToken)
+    } else {
+      const stored = localStorage.getItem('fieldnotes:invite-token:' + canvas.id) || ''
+      setInviteToken(stored)
+    }
+  }, [canvas.id])
+
+  const canWrite = useMemo(() => {
+    if (canModerate) return true
+    if (isInviteValid) return true
+    if (settings.locked) return false
+    if (settings.loginOnly && !identity) return false
+    return true
+  }, [canModerate, isInviteValid, settings.locked, settings.loginOnly, identity])
+
+  const updateSettings = async (nextSettings: typeof settings) => {
+    try {
+      const response = await fetch(`/api/canvases/${encodeURIComponent(canvas.id)}/settings`, {
+        method: 'POST',
+        headers: {
+          'content-type': 'application/json',
+          'x-fieldnotes-owner-token': ownerToken,
+        },
+        body: JSON.stringify({ settings: nextSettings }),
+      })
+      const result = await response.json() as { settings?: typeof settings; error?: string }
+      if (!response.ok || !result.settings) throw new Error(result.error ?? 'Could not update settings')
+      setSettings(result.settings)
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Could not update settings')
+    }
+  }
+
+  const createInviteLink = async () => {
+    setInviteState('creating')
+    try {
+      const response = await fetch(`/api/canvases/${encodeURIComponent(canvas.id)}/invites`, {
+        method: 'POST',
+        headers: {
+          'x-fieldnotes-owner-token': ownerToken,
+        },
+      })
+      const result = await response.json() as { token?: string; error?: string }
+      if (!response.ok || !result.token) throw new Error(result.error ?? 'Could not create invite')
+
+      const url = new URL(window.location.href)
+      url.searchParams.set('canvas', canvas.id)
+      url.searchParams.set('invite', result.token)
+      await navigator.clipboard.writeText(url.toString())
+      setInviteState('copied')
+      setTimeout(() => setInviteState('idle'), 2000)
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Could not create invite')
+      setInviteState('idle')
+    }
+  }
 
   useEffect(() => {
     const select = (event: Event) => setCanvas((event as CustomEvent<{ id: string; title: string }>).detail)
@@ -86,18 +161,24 @@ export default function CanvasChat() {
     const connect = () => {
       const url = new URL(`/api/canvases/${encodeURIComponent(canvas.id)}/chat`, window.location.origin)
       url.protocol = url.protocol === 'https:' ? 'wss:' : 'ws:'
+      const savedInvite = localStorage.getItem('fieldnotes:invite-token:' + canvas.id) ?? ''
+      if (savedInvite) url.searchParams.set('invite', savedInvite)
+      if (ownerToken) url.searchParams.set('ownerToken', ownerToken)
       socket = new WebSocket(url)
       socketRef.current = socket
       socket.onopen = () => { attempts = 0; setConnected(true) }
       socket.onmessage = (event) => {
         if (event.data === 'pong') return
-        const payload = JSON.parse(event.data) as { type: string; message?: Message; messages?: Message[]; messageId?: string; userId?: string; authorName?: string }
+        const payload = JSON.parse(event.data) as { type: string; message?: Message; messages?: Message[]; messageId?: string; userId?: string; authorName?: string; settings?: { locked: boolean; loginOnly: boolean } }
         if (payload.messages) merge(payload.messages)
         if (payload.message?.deleted) setMessages((current) => current.filter((message) => message.id !== payload.message!.id))
         else if (payload.message) merge([payload.message])
         if (payload.type === 'delete' && payload.messageId) setMessages((current) => current.filter((message) => message.id !== payload.messageId))
         if (payload.type === 'typing' && payload.authorName && payload.userId) {
           setTypers((current) => new Map(current).set(payload.userId!, { name: payload.authorName!, expires: Date.now() + 5_000 }))
+        }
+        if (payload.type === 'settings' && payload.settings) {
+          setSettings(payload.settings)
         }
       }
       socket.onclose = () => {
@@ -106,12 +187,31 @@ export default function CanvasChat() {
       }
       socket.onerror = () => socket?.close()
     }
-    void fetch(`/api/canvases/${encodeURIComponent(canvas.id)}/messages`, { headers: { 'x-fieldnotes-owner-token': ownerToken } }).then(async (response) => {
+    const savedInvite = localStorage.getItem('fieldnotes:invite-token:' + canvas.id) ?? ''
+    void fetch(`/api/canvases/${encodeURIComponent(canvas.id)}/messages`, {
+      headers: {
+        'x-fieldnotes-owner-token': ownerToken,
+        'x-fieldnotes-invite-token': savedInvite
+      }
+    }).then(async (response) => {
       if (!response.ok) throw new Error('Could not load chat')
-      const result = await response.json() as { messages: Message[]; discord?: { channelId: string; guildId: string; inviteUrl?: string; channelName?: string } | null; canModerate?: boolean }
+      const result = await response.json() as {
+        messages: Message[];
+        discord?: { channelId: string; guildId: string; inviteUrl?: string; channelName?: string } | null;
+        canModerate?: boolean;
+        settings?: { locked: boolean; loginOnly: boolean };
+        isInviteValid?: boolean;
+      }
       if (!disposed) {
         merge(result.messages); setCanModerate(Boolean(result.canModerate))
         setDiscordLinked(Boolean(result.discord)); setDiscordInvite(result.discord?.inviteUrl ?? ''); setDiscordChannelName(result.discord?.channelName ?? '')
+        if (result.settings) setSettings(result.settings)
+        if (result.isInviteValid !== undefined) {
+          setIsInviteValid(result.isInviteValid)
+          if (!result.isInviteValid && savedInvite) {
+            localStorage.removeItem('fieldnotes:invite-token:' + canvas.id)
+          }
+        }
       }
       const linkedId = window.location.hash.match(/^#discord-message-([0-9a-f-]{36})$/)?.[1]
       if (linkedId && !result.messages.some((message) => message.id === linkedId)) {
@@ -182,8 +282,9 @@ export default function CanvasChat() {
     if ((!value && !uploads.length) || sending) return
     setSending(true); setError('')
     try {
+      const savedInvite = localStorage.getItem('fieldnotes:invite-token:' + canvas.id) ?? ''
       const response = await fetch(`/api/canvases/${encodeURIComponent(canvas.id)}/messages`, {
-        method: 'POST', headers: { 'content-type': 'application/json', 'x-fieldnotes-device': getDeviceId() },
+        method: 'POST', headers: { 'content-type': 'application/json', 'x-fieldnotes-device': getDeviceId(), 'x-fieldnotes-owner-token': ownerToken, 'x-fieldnotes-invite-token': savedInvite },
         body: JSON.stringify({ content: value, replyTo: replyTo?.id, guestName, attachments: uploads.map((file) => ({ id: file.id, name: file.name, url: file.url })) }),
       })
       const result = await response.json() as { message?: Message; error?: string }
@@ -255,8 +356,9 @@ export default function CanvasChat() {
     const key = message.id + ':' + emoji
     const active = !myReactions.has(key)
     setMyReactions((current) => { const next = new Set(current); active ? next.add(key) : next.delete(key); return next })
+    const savedInvite = localStorage.getItem('fieldnotes:invite-token:' + canvas.id) ?? ''
     const response = await fetch('/api/canvases/' + encodeURIComponent(canvas.id) + '/messages/' + message.id + '/reactions', {
-      method: 'POST', headers: { 'content-type': 'application/json', 'x-fieldnotes-device': getDeviceId() },
+      method: 'POST', headers: { 'content-type': 'application/json', 'x-fieldnotes-device': getDeviceId(), 'x-fieldnotes-owner-token': ownerToken, 'x-fieldnotes-invite-token': savedInvite },
       body: JSON.stringify({ emoji, guestName }),
     })
     const result = await response.json() as { message?: Message; active?: boolean; error?: string }
@@ -359,7 +461,7 @@ export default function CanvasChat() {
         <button className="grid size-7 place-items-center rounded-md border border-stone-200 bg-white text-stone-500 hover:bg-stone-50" aria-label="More channel options" onClick={(event) => {
           const rect = event.currentTarget.getBoundingClientRect()
           const width = 224
-          const height = 124
+          const height = canModerate ? 230 : 124
           setPopover(undefined)
           setHeaderMenu((current) => current ? undefined : {
             left: Math.max(8, Math.min(window.innerWidth - width - 8, rect.right - width)),
@@ -372,9 +474,9 @@ export default function CanvasChat() {
       const parent = message.replyTo ? byId.get(message.replyTo) : undefined
       return <article id={`discord-message-${message.id}`} className="deep-link-target group relative px-3 py-2 hover:bg-stone-100/70" onMouseEnter={() => { if (popover && popover.message.id !== message.id) setPopover(undefined) }}>
         <div className="invisible absolute -top-3 right-2 z-20 flex items-center rounded-md border border-stone-200 bg-white p-0.5 shadow-sm group-hover:visible group-focus-within:visible">
-          {QUICK_REACTIONS.map((emoji) => <button className="grid size-7 place-items-center rounded border-0 bg-transparent text-sm hover:bg-stone-100" key={emoji} title={'React ' + emoji} onClick={() => void react(message, emoji)}>{emoji}</button>)}
-          <button className="grid size-7 place-items-center rounded border-0 bg-transparent text-stone-500 hover:bg-stone-100" title="More reactions" onClick={(event) => togglePopover('emoji', message, event)}><SmilePlus size={14} /></button>
-          <button className="grid size-7 place-items-center rounded border-0 bg-transparent text-stone-500 hover:bg-stone-100" title="Reply" onClick={() => setReplyTo(message)}><MessageCircleReply size={14} /></button>
+          {canWrite && QUICK_REACTIONS.map((emoji) => <button className="grid size-7 place-items-center rounded border-0 bg-transparent text-sm hover:bg-stone-100" key={emoji} title={'React ' + emoji} onClick={() => void react(message, emoji)}>{emoji}</button>)}
+          {canWrite && <button className="grid size-7 place-items-center rounded border-0 bg-transparent text-stone-500 hover:bg-stone-100" title="More reactions" onClick={(event) => togglePopover('emoji', message, event)}><SmilePlus size={14} /></button>}
+          {canWrite && <button className="grid size-7 place-items-center rounded border-0 bg-transparent text-stone-500 hover:bg-stone-100" title="Reply" onClick={() => setReplyTo(message)}><MessageCircleReply size={14} /></button>}
           <button className="grid size-7 place-items-center rounded border-0 bg-transparent text-stone-500 hover:bg-stone-100" title="Forward" onClick={() => void forwardMessage(message)}><Forward size={14} /></button>
           <button className="grid size-7 place-items-center rounded border-0 bg-transparent text-stone-500 hover:bg-stone-100" title="More" onClick={(event) => togglePopover('more', message, event)}><MoreHorizontal size={15} /></button>
         </div>
@@ -395,23 +497,35 @@ export default function CanvasChat() {
                 top: Math.max(8, Math.min(window.innerHeight - 48, rect.bottom + 6)),
                 left: Math.max(8, Math.min(window.innerWidth - 240, rect.left)),
               })
-            }} onMouseLeave={() => setReactionHover(undefined)} onClick={() => void react(message, reaction.emoji)}>{renderEmoji(reaction.emoji)} {reaction.count}</button>)}</div>
+            }} onMouseLeave={() => setReactionHover(undefined)} onClick={() => canWrite && void react(message, reaction.emoji)} disabled={!canWrite}>{renderEmoji(reaction.emoji)} {reaction.count}</button>)}</div>
           </div>
         </div>
       </article>
     }} />
     {error && <div role="alert" className="flex items-center gap-1 px-3 py-1 text-[9px] text-red-700"><Unplug size={10} />{error}</div>}
     <div className="min-h-4 px-3 text-[9px] italic text-stone-400">{typingLabel([...typers.values()].map((typer) => typer.name))}</div>
-    <div className="flex items-center justify-between border-t border-rule px-3 pt-2">
+    {canWrite && <div className="flex items-center justify-between border-t border-rule px-3 pt-2">
       {identity ? <span className="text-[9px] text-stone-400">Posting as {identity.displayName}</span> : <label className="flex items-center gap-1 text-[9px] text-stone-400">Posting as <input className="w-28 rounded border border-stone-200 bg-white px-1.5 py-1 text-[9px] text-stone-700" maxLength={32} value={guestName} onChange={(event) => setGuestName(event.target.value)} onBlur={() => setGuestName(saveGuestName(guestName))} /></label>}
       <DiscordIdentity compact onChange={(next) => setIdentity(next)} />
-    </div>
-    <form className="m-3 mt-2 rounded-lg border border-stone-300 bg-white p-2" onSubmit={(event) => { event.preventDefault(); void send() }}>
-      {replyTo && <div className="-mx-2 -mt-2 mb-2 flex items-center gap-2 rounded-t-lg border-b border-stone-200 bg-stone-50 px-2 py-1.5 text-[9px]">{replyTo.authorAvatar ? <img className="size-5 rounded-full" src={replyTo.authorAvatar} alt="" /> : <span className="grid size-5 place-items-center rounded-full bg-stone-200 text-[7px]">{replyTo.authorName.slice(0, 2).toUpperCase()}</span>}<MessageCircleReply size={11} className="shrink-0 text-indigo-500" /><button type="button" className="min-w-0 flex-1 truncate border-0 bg-transparent text-left text-stone-500" onClick={() => jumpToMessage(replyTo.id)}>Replying to <strong className="text-stone-700">{replyTo.authorName}</strong> · {replyTo.content || 'Attachment'}</button><button type="button" className="grid size-5 place-items-center border-0 bg-transparent text-stone-400" onClick={() => setReplyTo(undefined)}>×</button></div>}
-      <textarea ref={composerRef} rows={1} className="w-full resize-none border-0 bg-transparent text-[11px] outline-none" maxLength={2000} placeholder="Message this canvas and Discord…" value={content} onChange={(event) => { setContent(event.target.value); announceTyping() }} onKeyDown={handleKeyDown} />
-      {uploads.length > 0 && <div className="mb-1 flex flex-wrap gap-1">{uploads.map((file) => <button type="button" className="rounded bg-stone-100 px-1.5 py-1 text-[8px]" key={file.id} onClick={() => setUploads((current) => current.filter((item) => item.id !== file.id))}>{file.name} ×</button>)}</div>}
-      <div className="flex items-center justify-between"><span className="text-[8px] text-stone-400">{content.length}/2000</span><div className="flex items-center gap-1"><input ref={fileInput} type="file" multiple hidden onChange={(event) => void uploadFiles(event.target.files)} /><button type="button" className="grid size-7 place-items-center rounded-md border-0 bg-stone-100 text-stone-600 disabled:opacity-40" disabled={uploading || uploads.length >= 10} onClick={() => fileInput.current?.click()} aria-label="Attach files"><Paperclip size={13} /></button><button type="button" className="grid size-7 place-items-center rounded-md border-0 bg-stone-100 text-stone-600" onClick={toggleComposerEmoji} aria-label="Insert emoji"><Smile size={13} /></button><button className="grid size-7 place-items-center rounded-md border-0 bg-forest text-white disabled:opacity-40" disabled={(!content.trim() && !uploads.length) || sending || uploading} aria-label="Send message"><Send size={13} /></button></div></div>
-    </form>
+    </div>}
+    {canWrite
+      ? <form className="m-3 mt-2 rounded-lg border border-stone-300 bg-white p-2" onSubmit={(event) => { event.preventDefault(); void send() }}>
+          {replyTo && <div className="-mx-2 -mt-2 mb-2 flex items-center gap-2 rounded-t-lg border-b border-stone-200 bg-stone-50 px-2 py-1.5 text-[9px]">{replyTo.authorAvatar ? <img className="size-5 rounded-full" src={replyTo.authorAvatar} alt="" /> : <span className="grid size-5 place-items-center rounded-full bg-stone-200 text-[7px]">{replyTo.authorName.slice(0, 2).toUpperCase()}</span>}<MessageCircleReply size={11} className="shrink-0 text-indigo-500" /><button type="button" className="min-w-0 flex-1 truncate border-0 bg-transparent text-left text-stone-500" onClick={() => jumpToMessage(replyTo.id)}>Replying to <strong className="text-stone-700">{replyTo.authorName}</strong> · {replyTo.content || 'Attachment'}</button><button type="button" className="grid size-5 place-items-center border-0 bg-transparent text-stone-400" onClick={() => setReplyTo(undefined)}>×</button></div>}
+          <textarea ref={composerRef} rows={1} className="w-full resize-none border-0 bg-transparent text-[11px] outline-none" maxLength={2000} placeholder="Message this canvas and Discord…" value={content} onChange={(event) => { setContent(event.target.value); announceTyping() }} onKeyDown={handleKeyDown} />
+          {uploads.length > 0 && <div className="mb-1 flex flex-wrap gap-1">{uploads.map((file) => <button type="button" className="rounded bg-stone-100 px-1.5 py-1 text-[8px]" key={file.id} onClick={() => setUploads((current) => current.filter((item) => item.id !== file.id))}>{file.name} ×</button>)}</div>}
+          <div className="flex items-center justify-between"><span className="text-[8px] text-stone-400">{content.length}/2000</span><div className="flex items-center gap-1"><input ref={fileInput} type="file" multiple hidden onChange={(event) => void uploadFiles(event.target.files)} /><button type="button" className="grid size-7 place-items-center rounded-md border-0 bg-stone-100 text-stone-600 disabled:opacity-40" disabled={uploading || uploads.length >= 10} onClick={() => fileInput.current?.click()} aria-label="Attach files"><Paperclip size={13} /></button><button type="button" className="grid size-7 place-items-center rounded-md border-0 bg-stone-100 text-stone-600" onClick={toggleComposerEmoji} aria-label="Insert emoji"><Smile size={13} /></button><button className="grid size-7 place-items-center rounded-md border-0 bg-forest text-white disabled:opacity-40" disabled={(!content.trim() && !uploads.length) || sending || uploading} aria-label="Send message"><Send size={13} /></button></div></div>
+        </form>
+      : <div className="m-3 mt-2 rounded-lg border border-stone-200 bg-stone-50 px-3 py-3 text-center">
+          {settings.locked && !settings.loginOnly && <p className="flex items-center justify-center gap-1.5 text-[10px] text-stone-500"><Lock size={11} /> This chat is locked. Only the admin can post.</p>}
+          {settings.loginOnly && !identity && (
+            <div className="flex flex-col items-center gap-2">
+              <p className="flex items-center gap-1.5 text-[10px] text-stone-500"><UserCheck size={11} /> Sign in to participate in this chat.</p>
+              <DiscordIdentity compact={false} onChange={(next) => setIdentity(next)} />
+            </div>
+          )}
+          {settings.locked && settings.loginOnly && identity && <p className="flex items-center justify-center gap-1.5 text-[10px] text-stone-500"><Lock size={11} /> This chat is locked. Only the admin can post.</p>}
+        </div>
+    }
     <DiscordConnectModal canvasId={canvas.id} open={connectOpen} onClose={() => setConnectOpen(false)} onLinked={() => {
       setDiscordLinked(true)
       void fetch('/api/canvases/' + encodeURIComponent(canvas.id) + '/discord-invite', { method: 'POST' }).then(async (response) => {
@@ -434,7 +548,22 @@ export default function CanvasChat() {
     {headerMenu && createPortal(<div ref={headerMenuRef} className="fixed z-[1000] w-56 rounded-lg border border-stone-200 bg-white p-1 text-[10px] shadow-xl" style={{ top: headerMenu.top, left: headerMenu.left }}>
       {discordInvite && <a className="flex w-full items-center gap-2 rounded border-0 bg-transparent px-2 py-2 text-left hover:bg-stone-100" href={discordInvite} target="_blank" rel="noreferrer" onClick={() => setHeaderMenu(undefined)}>Join Discord server <ExternalLink size={13} /></a>}
       {!discordInvite && discordAuthorization && <a className="flex w-full items-center gap-2 rounded border-0 bg-transparent px-2 py-2 text-left hover:bg-stone-100" href={discordAuthorization} target="_blank" rel="noreferrer" onClick={() => setHeaderMenu(undefined)}>Join Discord server <ExternalLink size={13} /></a>}
-      {canModerate && <button className="flex w-full items-center gap-2 rounded border-0 bg-transparent px-2 py-2 text-left hover:bg-stone-100" onClick={() => { void saveConversation(); setHeaderMenu(undefined) }} disabled={saveState !== 'idle'}>{saveState === 'saving' ? 'Saving…' : saveState === 'saved' ? 'Saved to resources' : saveState === 'error' ? 'Save failed' : <>Save conversation <BookmarkPlus size={13} /></>}</button>}
+      {canModerate && <>
+        <div className="mx-2 my-1 border-t border-stone-100" />
+        <button className="flex w-full items-center justify-between rounded border-0 bg-transparent px-2 py-2 text-left hover:bg-stone-100" onClick={() => { void updateSettings({ ...settings, locked: !settings.locked }); setHeaderMenu(undefined) }}>
+          <span className="flex items-center gap-2"><Lock size={13} /> Lock chat</span>
+          <span className={`rounded px-1 py-0.5 text-[8px] font-semibold ${settings.locked ? 'bg-amber-100 text-amber-700' : 'bg-stone-100 text-stone-400'}`}>{settings.locked ? 'On' : 'Off'}</span>
+        </button>
+        <button className="flex w-full items-center justify-between rounded border-0 bg-transparent px-2 py-2 text-left hover:bg-stone-100" onClick={() => { void updateSettings({ ...settings, loginOnly: !settings.loginOnly }); setHeaderMenu(undefined) }}>
+          <span className="flex items-center gap-2"><UserCheck size={13} /> Login only</span>
+          <span className={`rounded px-1 py-0.5 text-[8px] font-semibold ${settings.loginOnly ? 'bg-indigo-100 text-indigo-700' : 'bg-stone-100 text-stone-400'}`}>{settings.loginOnly ? 'On' : 'Off'}</span>
+        </button>
+        <button className="flex w-full items-center gap-2 rounded border-0 bg-transparent px-2 py-2 text-left hover:bg-stone-100" onClick={() => { void createInviteLink(); setHeaderMenu(undefined) }} disabled={inviteState === 'creating'}>
+          <UserPlus size={13} /> {inviteState === 'copied' ? 'Link copied!' : inviteState === 'creating' ? 'Creating…' : 'Create invite link'}
+        </button>
+        <div className="mx-2 my-1 border-t border-stone-100" />
+        <button className="flex w-full items-center gap-2 rounded border-0 bg-transparent px-2 py-2 text-left hover:bg-stone-100" onClick={() => { void saveConversation(); setHeaderMenu(undefined) }} disabled={saveState !== 'idle'}>{saveState === 'saving' ? 'Saving…' : saveState === 'saved' ? 'Saved to resources' : saveState === 'error' ? 'Save failed' : <><BookmarkPlus size={13} /> Save conversation</>}</button>
+      </>}
       <button className="flex w-full items-center gap-2 rounded border-0 bg-transparent px-2 py-2 text-left hover:bg-stone-100" onClick={() => { setConnectOpen(true); setHeaderMenu(undefined) }}>Change channel</button>
     </div>, document.body)}
   </div>

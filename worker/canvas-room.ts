@@ -36,6 +36,11 @@ export type DiscordEvent = {
   userName?: string
 }
 
+export type ChatSettings = {
+  locked: boolean
+  loginOnly: boolean
+}
+
 export class CanvasRoom extends DurableObject<Env> {
   constructor(ctx: DurableObjectState, env: Env) {
     super(ctx, env)
@@ -67,10 +72,54 @@ export class CanvasRoom extends DurableObject<Env> {
           user_name TEXT,
           PRIMARY KEY (message_id, emoji, user_id)
         );
+        CREATE TABLE IF NOT EXISTS invites (
+          token TEXT PRIMARY KEY,
+          created_at INTEGER NOT NULL
+        );
       `)
       const reactionColumns = this.ctx.storage.sql.exec<{ name: string }>('PRAGMA table_info(reactions)').toArray()
       if (!reactionColumns.some((column) => column.name === 'user_name')) this.ctx.storage.sql.exec('ALTER TABLE reactions ADD COLUMN user_name TEXT')
     })
+  }
+
+  async getSettings(): Promise<ChatSettings> {
+    const value = this.ctx.storage.sql.exec<{ value: string }>("SELECT value FROM config WHERE key = 'settings'").toArray()[0]?.value
+    if (value) {
+      try { return JSON.parse(value) as ChatSettings } catch {}
+    }
+    return { locked: false, loginOnly: false }
+  }
+
+  async setSettings(settings: ChatSettings): Promise<void> {
+    this.ctx.storage.sql.exec("INSERT OR REPLACE INTO config(key, value) VALUES ('settings', ?)", JSON.stringify(settings))
+    this.broadcast({ type: 'settings', settings })
+  }
+
+  async createInvite(): Promise<string> {
+    const token = crypto.randomUUID()
+    this.ctx.storage.sql.exec("INSERT INTO invites(token, created_at) VALUES (?, ?)", token, Date.now())
+    return token
+  }
+
+  async verifyInvite(token: string | null): Promise<boolean> {
+    if (!token) return false
+    const row = this.ctx.storage.sql.exec<{ found: number }>("SELECT 1 AS found FROM invites WHERE token = ?", token).toArray()[0]
+    return Boolean(row?.found)
+  }
+
+  async canParticipate(userId: string, ownerToken: string | null, inviteToken: string | null): Promise<boolean> {
+    if (ownerToken) {
+      const isOwner = await this.claimOwnerToken(ownerToken)
+      if (isOwner) return true
+    }
+    if (await this.verifyInvite(inviteToken)) return true
+
+    const settings = await this.getSettings()
+    if (settings.locked) return false
+    if (settings.loginOnly) {
+      return !userId.startsWith('guest:')
+    }
+    return true
   }
 
   async fetch(request: Request): Promise<Response> {
@@ -78,13 +127,20 @@ export class CanvasRoom extends DurableObject<Env> {
     const pair = new WebSocketPair()
     const [client, server] = Object.values(pair)
     this.ctx.acceptWebSocket(server)
+
+    const url = new URL(request.url)
+    const inviteToken = url.searchParams.get('invite')
+    const ownerToken = url.searchParams.get('ownerToken')
+
     server.serializeAttachment({
       connectedAt: Date.now(),
       authorId: request.headers.get('x-fieldnotes-author-id') ?? 'website',
       authorName: decodeURIComponent(request.headers.get('x-fieldnotes-author-name') ?? 'Someone'),
       guest: request.headers.get('x-fieldnotes-guest') === 'true',
+      inviteToken: inviteToken ?? undefined,
+      ownerToken: ownerToken ?? undefined,
     })
-    server.send(JSON.stringify({ type: 'ready', messages: await this.listMessages(50) }))
+    server.send(JSON.stringify({ type: 'ready', messages: await this.listMessages(50), settings: await this.getSettings() }))
     return new Response(null, { status: 101, webSocket: client })
   }
 
@@ -94,9 +150,13 @@ export class CanvasRoom extends DurableObject<Env> {
     try {
       const payload = JSON.parse(message) as { type?: string; guestName?: string }
       if (payload.type !== 'typing') return
-      const attachment = ws.deserializeAttachment() as { authorId?: string; authorName?: string; guest?: boolean } | null
+      const attachment = ws.deserializeAttachment() as { authorId?: string; authorName?: string; guest?: boolean; inviteToken?: string; ownerToken?: string } | null
+      const authorId = attachment?.authorId ?? 'website'
+      const allowed = await this.canParticipate(authorId, attachment?.ownerToken ?? null, attachment?.inviteToken ?? null)
+      if (!allowed) return
+
       const authorName = attachment?.guest ? safeGuestName(payload.guestName, attachment.authorName) : attachment?.authorName ?? 'Someone'
-      this.broadcast({ type: 'typing', userId: attachment?.authorId ?? 'website', authorName }, ws)
+      this.broadcast({ type: 'typing', userId: authorId, authorName }, ws)
       const channel = await this.getDiscordChannel()
       if (channel) await this.env.DISCORD_OUTBOUND.send({ type: 'typing', channelId: channel.channelId })
     } catch { /* Ignore malformed client events. */ }
@@ -201,6 +261,8 @@ export class CanvasRoom extends DurableObject<Env> {
   }
 
   async claimOwnerToken(token: string): Promise<boolean> {
+    const siteOwnerToken = (this.env as Record<string, string | undefined>).OWNER_TOKEN
+    if (siteOwnerToken && token === siteOwnerToken) return true
     const current = await this.getOwnerToken()
     if (current) return current === token
     this.ctx.storage.sql.exec("INSERT OR REPLACE INTO config(key, value) VALUES ('owner', ?)", JSON.stringify(token))

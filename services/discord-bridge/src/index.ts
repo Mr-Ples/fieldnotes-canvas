@@ -73,13 +73,13 @@ client.on(Events.MessageDelete, async (message) => {
 client.on(Events.MessageReactionAdd, async (reaction, user) => {
   if (user.bot) return
   if (reaction.partial) await reaction.fetch()
-  await sendReactionEvent('REACTION_ADD', reaction.message.id, reaction.message.channelId, reaction.message.guildId, reactionEmoji(reaction.emoji), user.id, user.globalName ?? user.username)
+  await sendReactionEvent('REACTION_ADD', reaction.message.id, reaction.message.channelId, reaction.message.guildId, reactionEmoji(reaction.emoji), user.id, user.globalName ?? user.username ?? user.id)
 })
 
 client.on(Events.MessageReactionRemove, async (reaction, user) => {
   if (user.bot) return
   if (reaction.partial) await reaction.fetch()
-  await sendReactionEvent('REACTION_REMOVE', reaction.message.id, reaction.message.channelId, reaction.message.guildId, reactionEmoji(reaction.emoji), user.id, user.globalName ?? user.username)
+  await sendReactionEvent('REACTION_REMOVE', reaction.message.id, reaction.message.channelId, reaction.message.guildId, reactionEmoji(reaction.emoji), user.id, user.globalName ?? user.username ?? user.id)
 })
 
 client.on(Events.TypingStart, async (typing) => {

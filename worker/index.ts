@@ -54,6 +54,10 @@ export default {
       if (messageRoute && request.method === 'DELETE') return await deleteCanvasMessage(request, env, decodeURIComponent(messageRoute[1]), messageRoute[2], actor)
       const canvasRoute = url.pathname.match(/^\/api\/canvases\/([^/]+)\/(messages|chat)$/)
       if (canvasRoute) return await canvasChat(request, env, decodeURIComponent(canvasRoute[1]), canvasRoute[2], actor)
+      const settingsRoute = url.pathname.match(/^\/api\/canvases\/([^/]+)\/settings$/)
+      if (settingsRoute && request.method === 'POST') return await canvasSettings(request, env, decodeURIComponent(settingsRoute[1]))
+      const invitesRoute = url.pathname.match(/^\/api\/canvases\/([^/]+)\/invites$/)
+      if (invitesRoute && request.method === 'POST') return await canvasInvites(request, env, decodeURIComponent(invitesRoute[1]))
       if (url.pathname === '/api/internal/discord/link' && request.method === 'POST') return await linkDiscordChannel(request, env)
       if (url.pathname === '/api/internal/discord/events' && request.method === 'POST') return await receiveDiscordEvent(request, env)
       return json({ error: 'Not found' }, 404)
@@ -212,7 +216,17 @@ async function canvasChat(request: Request, env: Env, canvasId: string, action: 
   }
   if (request.method === 'GET') {
     const before = Number(new URL(request.url).searchParams.get('before')) || undefined
-    const [messages, storedDiscord, identity] = await Promise.all([room.listMessages(50, before), room.getDiscordChannel(), websiteIdentity(request, env, actor)])
+    const ownerToken = request.headers.get('x-fieldnotes-owner-token')?.slice(0, 128) ?? ''
+    const inviteToken = (request.headers.get('x-fieldnotes-invite-token') ?? new URL(request.url).searchParams.get('invite'))?.slice(0, 128) ?? ''
+
+    const [messages, storedDiscord, identity, settings, isInviteValid, canModerate] = await Promise.all([
+      room.listMessages(50, before),
+      room.getDiscordChannel(),
+      websiteIdentity(request, env, actor),
+      room.getSettings(),
+      room.verifyInvite(inviteToken),
+      ownerToken ? room.claimOwnerToken(ownerToken) : Promise.resolve(false)
+    ])
     let discord = storedDiscord
     if (discord && !discord.channelName) {
       try {
@@ -224,16 +238,19 @@ async function canvasChat(request: Request, env: Env, canvasId: string, action: 
         }
       } catch { /* Ignore name lookup failures. */ }
     }
-    const ownerToken = request.headers.get('x-fieldnotes-owner-token')?.slice(0, 128) ?? ''
-    const canModerate = ownerToken ? await room.claimOwnerToken(ownerToken) : false
-    return json({ messages, discord, canModerate })
+    return json({ messages, discord, canModerate, settings, isInviteValid })
   }
   if (request.method !== 'POST') return json({ error: 'Method not allowed' }, 405)
+  const identity = await websiteIdentity(request, env, actor)
+  const ownerToken = request.headers.get('x-fieldnotes-owner-token')?.slice(0, 128) ?? ''
+  const inviteToken = (request.headers.get('x-fieldnotes-invite-token') ?? new URL(request.url).searchParams.get('invite'))?.slice(0, 128) ?? ''
+  const allowed = await room.canParticipate(identity.authorId, ownerToken, inviteToken)
+  if (!allowed) return json({ error: 'You do not have permission to post in this chat.' }, 403)
+
   const body = await readJson<{ content?: string; replyTo?: string; guestName?: string; attachments?: Array<{ id?: string; name?: string; url?: string; contentType?: string }> }>(request)
   const content = body.content?.trim()
   const attachments = (body.attachments ?? []).filter((item) => item.id && item.name && item.url && allowedMediaUrl(item.url, env)).slice(0, 10) as Array<{ id: string; name: string; url: string; contentType?: string }>
   if ((!content && !attachments.length) || (content?.length ?? 0) > 2_000) return json({ error: 'Add a message or attachment (message limit: 2,000 characters)' }, 400)
-  const identity = await websiteIdentity(request, env, actor)
   const webhookUsername = identity.authorName
   if (identity.authorId.startsWith('guest:')) identity.authorName = safeGuestName(body.guestName, identity.authorName)
   const message = await room.postWebsite({ ...identity, content: content ?? '', replyTo: body.replyTo, attachments })
@@ -259,12 +276,19 @@ async function getCanvasMessage(env: Env, canvasId: string, messageId: string) {
 
 async function canvasReaction(request: Request, env: Env, canvasId: string, messageId: string, actor: string) {
   if (!/^[a-zA-Z0-9_-]{1,100}$/.test(canvasId)) return json({ error: 'Invalid canvas' }, 400)
+  const ownerToken = request.headers.get('x-fieldnotes-owner-token')?.slice(0, 128) ?? ''
+  const inviteToken = (request.headers.get('x-fieldnotes-invite-token') ?? new URL(request.url).searchParams.get('invite'))?.slice(0, 128) ?? ''
+  const identity = await websiteIdentity(request, env, actor)
+
+  const room = env.CANVAS_ROOMS.getByName(canvasId)
+  const allowed = await room.canParticipate(identity.authorId, ownerToken, inviteToken)
+  if (!allowed) return json({ error: 'You do not have permission to react in this chat.' }, 403)
+
   const body = await readJson<{ emoji?: string; guestName?: string }>(request)
   const emoji = body.emoji?.trim()
   if (!emoji || emoji.length > 100) return json({ error: 'Invalid reaction' }, 400)
-  const identity = await websiteIdentity(request, env, actor)
   if (identity.authorId.startsWith('guest:')) identity.authorName = safeGuestName(body.guestName, identity.authorName)
-  const result = await env.CANVAS_ROOMS.getByName(canvasId).toggleWebsiteReaction(messageId, emoji, identity.authorId, identity.authorName)
+  const result = await room.toggleWebsiteReaction(messageId, emoji, identity.authorId, identity.authorName)
   if (!result) return json({ error: 'Message not found' }, 404)
   if (result.message.discordChannelId && result.message.discordMessageId) {
     await env.DISCORD_OUTBOUND.send({ type: 'reaction', channelId: result.message.discordChannelId, discordMessageId: result.message.discordMessageId, emoji, active: result.active } satisfies DiscordQueueMessage)
@@ -294,6 +318,35 @@ async function canvasDiscordInvite(env: Env, canvasId: string) {
   if (!inviteUrl) return json({ error: 'The bot cannot create an invite for this channel', authorizationUrl: discordBotInvite(env.DISCORD_CLIENT_ID, discord.guildId) }, 403)
   await room.setDiscordChannel(discord.channelId, discord.guildId, inviteUrl)
   return json({ inviteUrl })
+}
+
+async function canvasSettings(request: Request, env: Env, canvasId: string) {
+  if (!/^[a-zA-Z0-9_-]{1,100}$/.test(canvasId)) return json({ error: 'Invalid canvas' }, 400)
+  const ownerToken = request.headers.get('x-fieldnotes-owner-token')?.slice(0, 128) ?? ''
+  const room = env.CANVAS_ROOMS.getByName(canvasId)
+  if (!ownerToken || !(await room.claimOwnerToken(ownerToken))) {
+    return json({ error: 'Only the page owner can update settings' }, 403)
+  }
+  const body = await readJson<{ settings?: Partial<{ locked: boolean; loginOnly: boolean }> }>(request)
+  if (!body.settings) return json({ error: 'Missing settings' }, 400)
+  const current = await room.getSettings()
+  const next = {
+    locked: typeof body.settings.locked === 'boolean' ? body.settings.locked : current.locked,
+    loginOnly: typeof body.settings.loginOnly === 'boolean' ? body.settings.loginOnly : current.loginOnly,
+  }
+  await room.setSettings(next)
+  return json({ settings: next })
+}
+
+async function canvasInvites(request: Request, env: Env, canvasId: string) {
+  if (!/^[a-zA-Z0-9_-]{1,100}$/.test(canvasId)) return json({ error: 'Invalid canvas' }, 400)
+  const ownerToken = request.headers.get('x-fieldnotes-owner-token')?.slice(0, 128) ?? ''
+  const room = env.CANVAS_ROOMS.getByName(canvasId)
+  if (!ownerToken || !(await room.claimOwnerToken(ownerToken))) {
+    return json({ error: 'Only the page owner can create invite links' }, 403)
+  }
+  const token = await room.createInvite()
+  return json({ token })
 }
 
 function allowedMediaUrl(value: string, env: Env) {
