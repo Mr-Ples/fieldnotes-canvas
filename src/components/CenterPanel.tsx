@@ -1,12 +1,12 @@
 import { useEffect, useRef, useState, type FormEvent, type KeyboardEvent, type RefObject } from 'react'
-import { Bold, Check, ChevronDown, Code2, Eye, EyeClosed, File, FileText, Heading2, Italic, Link2, List, LogOut, MessageCircle, MoreHorizontal, Plus, Quote, Reply, Send, Settings, Trash2, Upload, UserPlus, Video, X } from 'lucide-react'
-import { canvases, comments, resources, type Canvas, type Comment } from '../data'
+import { Bold, Check, ChevronDown, Code2, Eye, EyeClosed, File, FileText, Heading2, Italic, Link2, List, LogOut, MessageCircle, MoreHorizontal, Plus, Quote, Reply, Send, Settings, Trash2, Upload, Video, X } from 'lucide-react'
+import { canvases, comments, projects, resources, type Canvas, type Comment } from '../data'
 import { Avatar, CopyLinkButton, IconButton, TabButton } from './Primitives'
 import { useLocalStorage } from '../hooks/useLocalStorage'
 import { CloudinaryMediaStorage } from '../services/media'
 import DiscordIdentity, { signOutDiscord, type DiscordUser } from './DiscordIdentity'
 import AnnotationLayer from './AnnotationLayer'
-import { showPrompt, showToast } from './Popups'
+import { showConfirm, showPrompt, showToast } from './Popups'
 import { getOwnerToken } from '../services/api'
 import { getCollaborationSettings, saveCollaborationSettings, type AccessMode, type CollaborationSettings } from '../services/collaboration'
 
@@ -22,6 +22,7 @@ export default function CenterPanel() {
   const [memberAccess, setMemberAccess] = useState({ canvas: false, resources: false, discussion: false, llm: false, chat: false })
   const [accountMenu, setAccountMenu] = useState(false)
   const [collaborationDialog, setCollaborationDialog] = useState<'settings' | 'invite' | 'view' | null>(null)
+  const [collaborationScope, setCollaborationScope] = useState<{ type: 'canvas' | 'project'; id: string }>({ type: 'canvas', id: '' })
   const [collaboration, setCollaboration] = useState<CollaborationSettings>(getCollaborationSettings)
   const [invitePermissions, setInvitePermissions] = useState({ canvas: true, resources: true, discussion: true, llm: true, chat: true })
   const [creatingInvite, setCreatingInvite] = useState(false)
@@ -33,6 +34,10 @@ export default function CenterPanel() {
     const stored = localStorage.getItem('fieldnotes:active-canvas')
     return stored ? JSON.parse(stored) as Canvas : canvases[0]
   })
+  const scopeName = collaborationScope.type === 'project'
+    ? (projects.find((project) => project.id === collaborationScope.id)?.title ?? collaborationScope.id)
+    : (storedCanvases().find((canvas) => canvas.id === collaborationScope.id)?.title ?? activeCanvas.title)
+  const dialogPurpose = collaborationDialog === 'invite' ? 'Create invite link' : collaborationDialog === 'view' ? 'My permissions' : 'Permissions'
 
   useEffect(() => {
     const target = window.location.hash.slice(1)
@@ -40,6 +45,23 @@ export default function CenterPanel() {
     requestAnimationFrame(() => document.getElementById(target)?.scrollIntoView({ behavior: 'smooth', block: 'center' }))
   }, [])
   const savePermissions = async () => {
+    if (!await showConfirm({
+      title: 'Save permission changes?',
+      message: `Apply these permissions to ${collaborationScope.type === 'project' ? 'project' : 'canvas'} “${scopeName}”?`,
+      confirmLabel: 'Save permissions',
+    })) return
+    if (collaborationScope.type === 'project') {
+      try {
+        const storedCanvases = JSON.parse(localStorage.getItem('fieldnotes:canvases') ?? JSON.stringify(canvases)) as Canvas[]
+        const projectCanvases = storedCanvases.filter((canvas) => canvasProjectId(canvas) === collaborationScope.id)
+        const responses = await Promise.all(projectCanvases.map((canvas) => fetch(`/api/canvases/${encodeURIComponent(canvas.id)}/settings`, { method: 'POST', headers: { 'content-type': 'application/json', 'x-fieldnotes-owner-token': getOwnerToken() }, body: JSON.stringify({ settings: { locked: collaboration.chat === 'readonly', loginOnly: collaboration.chat === 'login', canvasMode: collaboration.canvas, resourceMode: collaboration.resources, discussionMode: collaboration.discussion, llmMode: collaboration.llm } }) })))
+        if (responses.some((response) => !response.ok)) throw new Error('Some canvas settings could not be saved')
+        localStorage.setItem(`fieldnotes:project-permissions:${collaborationScope.id}`, JSON.stringify(collaboration))
+        setCollaborationDialog(null)
+        showToast('Project permissions saved')
+      } catch (reason) { showToast('Could not save project settings', reason instanceof Error ? reason.message : 'Try again') }
+      return
+    }
     saveCollaborationSettings(collaboration)
     try {
       const response = await fetch(`/api/canvases/${encodeURIComponent(activeCanvas.id)}/settings`, {
@@ -56,6 +78,30 @@ export default function CenterPanel() {
     if (creatingInvite) return
     setCreatingInvite(true)
     try {
+      if (collaborationScope.type === 'project') {
+        const storedCanvases = JSON.parse(localStorage.getItem('fieldnotes:canvases') ?? JSON.stringify(canvases)) as Canvas[]
+        const storedProjects = JSON.parse(localStorage.getItem('fieldnotes:projects') ?? JSON.stringify(projects)) as typeof projects
+        const projectCanvases = storedCanvases.filter((canvas) => canvasProjectId(canvas) === collaborationScope.id).map((canvas) => ({ ...canvas, projectId: collaborationScope.id }))
+        if (!projectCanvases.length) throw new Error('This project has no canvases')
+        const tokens = await Promise.all(projectCanvases.map(async (canvas) => {
+          const response = await fetch(`/api/canvases/${encodeURIComponent(canvas.id)}/invites`, { method: 'POST', headers: { 'content-type': 'application/json', 'x-fieldnotes-owner-token': getOwnerToken() }, body: JSON.stringify({ permissions: invitePermissions }) })
+          const result = await response.json() as { token?: string; error?: string }
+          if (!response.ok || !result.token) throw new Error(result.error ?? `Could not create an invite for ${canvas.title}`)
+          return [canvas.id, result.token] as const
+        }))
+        const snapshot = Object.fromEntries(tokens.map(([canvasId, token]) => [`fieldnotes:invite-token:${canvasId}`, token]))
+        snapshot['fieldnotes:canvases'] = JSON.stringify(projectCanvases)
+        snapshot['fieldnotes:projects'] = JSON.stringify(storedProjects.filter((project) => project.id === collaborationScope.id))
+        snapshot['fieldnotes:active-canvas'] = JSON.stringify(projectCanvases[0])
+        const shareResponse = await fetch('/api/shares', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ snapshot }) })
+        const share = await shareResponse.json() as { token?: string; error?: string }
+        if (!shareResponse.ok || !share.token) throw new Error(share.error ?? 'Could not create the project link')
+        const url = new URL(window.location.href); url.search = ''; url.hash = ''; url.searchParams.set('share', share.token)
+        await navigator.clipboard.writeText(url.toString())
+        setCollaborationDialog(null)
+        showToast('Project invite link copied')
+        return
+      }
       const response = await fetch(`/api/canvases/${encodeURIComponent(activeCanvas.id)}/invites`, {
         method: 'POST', headers: { 'content-type': 'application/json', 'x-fieldnotes-owner-token': getOwnerToken() },
         body: JSON.stringify({ permissions: invitePermissions }),
@@ -80,8 +126,15 @@ export default function CenterPanel() {
       setCollaboration({ canvas: detail.settings.canvasMode ?? 'public', resources: detail.settings.resourceMode ?? 'public', discussion: detail.settings.discussionMode ?? 'public', llm: detail.settings.llmMode ?? 'public', chat: detail.settings.locked ? 'readonly' : detail.settings.loginOnly ? 'login' : 'public' })
     }
     const openPermissions = (event: Event) => {
-      const dialog = (event as CustomEvent<'settings' | 'invite' | 'view'>).detail
+      const detail = (event as CustomEvent<'settings' | 'invite' | 'view' | { dialog: 'settings' | 'invite' | 'view'; scope: 'canvas' | 'project'; projectId?: string; canvasId?: string }>).detail
+      const dialog = typeof detail === 'string' ? detail : detail.dialog
+      const scope = typeof detail === 'string' ? { type: 'canvas' as const, id: activeCanvas.id } : { type: detail.scope, id: detail.projectId ?? detail.canvasId ?? activeCanvas.id }
+      setCollaborationScope(scope)
       if (dialog === 'settings') setCollaboration(getCollaborationSettings())
+      if (dialog === 'settings' && scope.type === 'project') {
+        const saved = localStorage.getItem(`fieldnotes:project-permissions:${scope.id}`)
+        if (saved) setCollaboration(JSON.parse(saved) as CollaborationSettings)
+      }
       setCollaborationDialog(dialog)
     }
     const closeAccountMenu = (event: PointerEvent) => { if (!accountMenuRef.current?.contains(event.target as Node)) setAccountMenu(false) }
@@ -98,15 +151,15 @@ export default function CenterPanel() {
     <header className="canvas-header">
       <div className="breadcrumbs"><span>Research</span><span>/</span><strong>{activeCanvas.title}</strong><ChevronDown size={14} /></div>
       <div className="header-actions"><span className="saved-state"><Check size={13} /> {saved ? 'Saved' : 'Saving…'}</span><div className="account-actions" ref={accountMenuRef}><DiscordIdentity compact onChange={setIdentity}/>{(identity || canModerate) && <IconButton label="Account and canvas options" onClick={() => setAccountMenu((open) => !open)}><MoreHorizontal size={18} /></IconButton>}{accountMenu && <div className="account-menu">
-        {canModerate && <button onClick={() => { setCollaborationDialog('invite'); setAccountMenu(false) }}><UserPlus size={14}/> Create invite link</button>}
-        {canModerate && <button onClick={() => { setCollaboration(getCollaborationSettings()); setCollaborationDialog('settings'); setAccountMenu(false) }}><Settings size={14}/> Permissions</button>}
-        {!canModerate && <button onClick={() => { setCollaborationDialog('view'); setAccountMenu(false) }}><Settings size={14}/> My permissions</button>}
+        {canModerate && <button onClick={() => { setCollaborationScope({ type: 'canvas', id: activeCanvas.id }); setCollaborationDialog('invite'); setAccountMenu(false) }}><Link2 size={14}/> Create invite link</button>}
+        {canModerate && <button onClick={() => { setCollaborationScope({ type: 'canvas', id: activeCanvas.id }); setCollaboration(getCollaborationSettings()); setCollaborationDialog('settings'); setAccountMenu(false) }}><Settings size={14}/> Permissions</button>}
+        {!canModerate && <button onClick={() => { setCollaborationScope({ type: 'canvas', id: activeCanvas.id }); setCollaborationDialog('view'); setAccountMenu(false) }}><Settings size={14}/> My permissions</button>}
         {identity && <button className="danger" onClick={() => { setAccountMenu(false); void signOutDiscord() }}><LogOut size={14}/> Logout</button>}
       </div>}</div></div>
     </header>
 
-    {collaborationDialog && <div className="collaboration-backdrop" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) setCollaborationDialog(null) }}><section className="collaboration-dialog" role="dialog" aria-modal="true" aria-label={collaborationDialog === 'invite' ? 'Create invite link' : collaborationDialog === 'view' ? 'My permissions' : 'Permissions'}>
-      <div className="collaboration-dialog-head"><div><span className="eyebrow">Permissions</span><h2>{collaborationDialog === 'invite' ? 'Create invite link' : collaborationDialog === 'view' ? 'My permissions' : 'Permissions'}</h2></div><IconButton label="Close" onClick={() => setCollaborationDialog(null)}><X size={16}/></IconButton></div>
+    {collaborationDialog && <div className="collaboration-backdrop" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) setCollaborationDialog(null) }}><section className="collaboration-dialog" role="dialog" aria-modal="true" aria-label={`${dialogPurpose} for ${scopeName}`}>
+      <div className="collaboration-dialog-head"><div><span className="eyebrow">{collaborationScope.type === 'project' ? 'Project' : 'Canvas'} · {scopeName}{collaborationScope.type === 'project' ? ' · All canvases' : ''}</span><h2>{dialogPurpose}</h2></div><IconButton label="Close" onClick={() => setCollaborationDialog(null)}><X size={16}/></IconButton></div>
       {collaborationDialog === 'settings' ? <div className="permission-list">
         <PermissionSelect label="Canvas" description="Notes and annotations" value={collaboration.canvas} onChange={(canvas) => setCollaboration({ ...collaboration, canvas })}/>
         <PermissionSelect label="Resources" description="Add and save canvas resources" value={collaboration.resources} onChange={(resources) => setCollaboration({ ...collaboration, resources })}/>
@@ -151,6 +204,15 @@ export default function CenterPanel() {
 
 function permissionLabel(key: 'canvas' | 'resources' | 'discussion' | 'llm' | 'chat') {
   return key === 'resources' ? 'Resources' : key === 'discussion' ? 'Discussion' : key === 'llm' ? 'LLM chat' : key === 'chat' ? 'Discord chat' : 'Canvas'
+}
+
+function canvasProjectId(canvas: Canvas) {
+  return canvas.projectId ?? (canvas.group === 'Active' ? 'attention-project' : canvas.group === 'Archive' ? 'fieldwork' : undefined)
+}
+
+function storedCanvases() {
+  try { return JSON.parse(localStorage.getItem('fieldnotes:canvases') ?? JSON.stringify(canvases)) as Canvas[] }
+  catch { return canvases }
 }
 
 function permissionDescription(key: 'canvas' | 'resources' | 'discussion' | 'llm' | 'chat') {

@@ -25,7 +25,12 @@ export default function AnnotationLayer({ editorRef, containerRef, canvasId, can
   const [hoveredCard, setHoveredCard] = useState<string | null>(null)
   const [activeOrigin, setActiveOrigin] = useState<'anchor' | 'card'>('anchor')
   const [positions, setPositions] = useState<Position[]>([])
-  const [docked, setDocked] = useState(false)
+  const [annotationTabOpen, setAnnotationTabOpen] = useState(() => {
+    const target = document.getElementById('right-panel-annotations')
+    const view = target?.closest<HTMLElement>('.dock-view')
+    const panel = target?.closest<HTMLElement>('.side-panel')
+    return Boolean(view?.classList.contains('is-active') && panel && getComputedStyle(panel).display !== 'none' && getComputedStyle(panel).visibility !== 'hidden')
+  })
   const [identity, setIdentity] = useState<{ id: string; displayName: string; avatar?: string } | null>(null)
   const composerRef = useRef<HTMLTextAreaElement>(null)
   const locateRef = useRef<() => void>(() => { })
@@ -39,6 +44,11 @@ export default function AnnotationLayer({ editorRef, containerRef, canvasId, can
     const sync = (event: Event) => setIdentity((event as CustomEvent<{ id: string; displayName: string; avatar?: string } | null>).detail)
     window.addEventListener('fieldnotes:discord-auth-synced', sync)
     return () => window.removeEventListener('fieldnotes:discord-auth-synced', sync)
+  }, [])
+  useEffect(() => {
+    const changed = (event: Event) => setAnnotationTabOpen(Boolean((event as CustomEvent<{ open: boolean }>).detail.open))
+    window.addEventListener('fieldnotes:annotations-tab-changed', changed)
+    return () => window.removeEventListener('fieldnotes:annotations-tab-changed', changed)
   }, [])
 
   const locate = useCallback(() => {
@@ -63,7 +73,6 @@ export default function AnnotationLayer({ editorRef, containerRef, canvasId, can
       const compact = mobile || (rightPanelOpen && containerRect.right - editorRect.right < 310)
       return [{ id: item.id, top, compact, anchorTop, anchorBottom: anchorTop + rect.height, anchorRight: rect.right - containerRect.left }]
     }).sort((a, b) => a.top - b.top)
-    setDocked(mobile || raw.some((position) => position.compact))
     const heightFor = (id: string) => cardHeights.current.get(id) ?? Math.min(220, 138 + (items.find((item) => item.id === id)?.replies?.length ?? 0) * 48)
     const activeIndex = active ? raw.findIndex((position) => position.id === active) : -1
     if (activeIndex < 0) {
@@ -119,7 +128,7 @@ export default function AnnotationLayer({ editorRef, containerRef, canvasId, can
   useEffect(() => { itemsRef.current = items }, [items])
   useEffect(() => { positionsRef.current = positions }, [positions])
   useLayoutEffect(() => {
-    if (!active || !docked || activeOrigin !== 'anchor') return
+    if (!active || !annotationTabOpen || activeOrigin !== 'anchor') return
     const frame = requestAnimationFrame(() => {
       const list = document.querySelector<HTMLElement>('#right-panel-annotations .docked-annotations')
       const card = list?.querySelector<HTMLElement>(`[data-annotation-thread-id="${CSS.escape(active)}"]`)
@@ -130,7 +139,7 @@ export default function AnnotationLayer({ editorRef, containerRef, canvasId, can
       else if (cardRect.bottom > listRect.bottom) list.scrollTop += cardRect.bottom - listRect.bottom + 8
     })
     return () => cancelAnimationFrame(frame)
-  }, [active, activeOrigin, docked])
+  }, [active, activeOrigin, annotationTabOpen])
   useEffect(() => {
     const editor = editorRef.current
     if (!editor) return
@@ -139,9 +148,9 @@ export default function AnnotationLayer({ editorRef, containerRef, canvasId, can
     return () => highlights.forEach((highlight) => highlight.classList.remove('is-annotation-active'))
   }, [editorRef, hoveredCard])
   useEffect(() => {
-    window.dispatchEvent(new CustomEvent('fieldnotes:annotations-docked', { detail: { docked: docked && mode !== 'hidden', count: items.length } }))
+    window.dispatchEvent(new CustomEvent('fieldnotes:annotations-docked', { detail: { docked: annotationTabOpen, count: items.length } }))
     return () => window.dispatchEvent(new CustomEvent('fieldnotes:annotations-docked', { detail: { docked: false, count: 0 } }))
-  }, [docked, items.length, mode])
+  }, [annotationTabOpen, items.length])
 
   useLayoutEffect(() => {
     if (!positions.length) return
@@ -201,7 +210,7 @@ export default function AnnotationLayer({ editorRef, containerRef, canvasId, can
       if (!item) return
       setActiveOrigin('anchor')
       setActive(id)
-      if (docked) window.dispatchEvent(new CustomEvent('fieldnotes:open-annotations', { detail: { id } }))
+      if (annotationTabOpen) window.dispatchEvent(new CustomEvent('fieldnotes:open-annotations', { detail: { id } }))
       const anchorId = item.anchorId ?? legacyAnchorId(item.id)
       const anchor = editorRef.current?.querySelector<HTMLElement>(`[data-annotation-id="${CSS.escape(id)}"]`) ?? (anchorId ? document.getElementById(anchorId) : null)
       anchor?.scrollIntoView({ behavior: 'smooth', block: 'center' })
@@ -209,7 +218,7 @@ export default function AnnotationLayer({ editorRef, containerRef, canvasId, can
     }
     reveal(); window.addEventListener('hashchange', reveal)
     return () => window.removeEventListener('hashchange', reveal)
-  }, [docked, editorRef])
+  }, [annotationTabOpen, editorRef])
 
   useEffect(() => {
     const editor = editorRef.current
@@ -242,11 +251,11 @@ export default function AnnotationLayer({ editorRef, containerRef, canvasId, can
     }
     const click = (event: Event) => {
       const id = (event.target as Element).closest<HTMLElement>('[data-annotation-id]')?.dataset.annotationId
-      if (id) { setActiveOrigin('anchor'); setActive(id); if (docked) window.dispatchEvent(new CustomEvent('fieldnotes:open-annotations', { detail: { id } })) }
+      if (id) { setActiveOrigin('anchor'); setActive(id); if (annotationTabOpen) window.dispatchEvent(new CustomEvent('fieldnotes:open-annotations', { detail: { id } })) }
     }
     editor.addEventListener('mouseover', over); editor.addEventListener('pointermove', move); editor.addEventListener('focusin', over); editor.addEventListener('click', click)
     return () => { editor.removeEventListener('mouseover', over); editor.removeEventListener('pointermove', move); editor.removeEventListener('focusin', over); editor.removeEventListener('click', click) }
-  }, [docked, editorRef])
+  }, [annotationTabOpen, editorRef])
 
   useEffect(() => {
     const close = (event: PointerEvent) => {
@@ -272,7 +281,7 @@ export default function AnnotationLayer({ editorRef, containerRef, canvasId, can
     const initials = author.split(/\s+/).map((part) => part[0]).join('').slice(0, 2).toUpperCase() || 'YO'
     setItems([...items, { id, quote: selection.quote, author, authorId: identity?.id, avatar: identity?.avatar, initials, time: 'Now', body: body.trim() }])
     onDocumentChange(); closeComposer(); setActiveOrigin('anchor'); setActive(id)
-    if (docked) window.dispatchEvent(new CustomEvent('fieldnotes:open-annotations', { detail: { id } }))
+    if (annotationTabOpen) window.dispatchEvent(new CustomEvent('fieldnotes:open-annotations', { detail: { id } }))
     requestAnimationFrame(locate)
   }
   const addReply = (id: string) => {
@@ -353,7 +362,7 @@ export default function AnnotationLayer({ editorRef, containerRef, canvasId, can
       <textarea ref={composerRef} value={body} onChange={(event) => setBody(event.target.value)} onKeyDown={(event) => { if ((event.metaKey || event.ctrlKey) && event.key === 'Enter') create() }} placeholder="Add a comment…" aria-label="Annotation comment" />
       <div><span>⌘ Enter to send</span><button disabled={!body.trim()} onClick={create}><Check size={13} /> Comment</button></div>
     </div>}
-    {!docked && <div className="annotation-thread-layer">{positions.map((position) => {
+    {!annotationTabOpen && mode !== 'hidden' && <div className="annotation-thread-layer">{positions.map((position) => {
       const item = items.find((candidate) => candidate.id === position.id)
       if (!item) return null
       const foreground = active === item.id || menu === item.id
@@ -363,7 +372,7 @@ export default function AnnotationLayer({ editorRef, containerRef, canvasId, can
         {renderCard(item, foreground)}
       </div>
     })}</div>}
-  </div>, root)}{docked && dockTarget && createPortal(<div className="docked-annotations">{dockedItems.map((item) => <div data-annotation-thread-id={item.id} className={`annotation-thread-docked ${active === item.id || menu === item.id ? 'is-active' : ''}`} key={item.id} onMouseEnter={() => { setActiveOrigin('card'); setActive(item.id); setHoveredCard(item.id) }} onMouseLeave={() => setHoveredCard(null)}>{renderCard(item, true)}</div>)}</div>, dockTarget)}</>
+  </div>, root)}{dockTarget && createPortal(<div className="docked-annotations">{dockedItems.map((item) => <div data-annotation-thread-id={item.id} className={`annotation-thread-docked ${active === item.id || menu === item.id ? 'is-active' : ''}`} key={item.id} onMouseEnter={() => { setActiveOrigin('card'); setActive(item.id); setHoveredCard(item.id) }} onMouseLeave={() => setHoveredCard(null)}>{renderCard(item, true)}</div>)}</div>, dockTarget)}</>
 }
 
 function highlightRange(range: Range, id: string) {

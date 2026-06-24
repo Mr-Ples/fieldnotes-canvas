@@ -1,26 +1,28 @@
-import { useEffect, useState } from 'react'
-import { Archive, Bot, ChevronDown, FileText, FolderOpen, MessageSquare, MoreHorizontal, Plus, Search, Send, Sparkles } from 'lucide-react'
-import { Virtuoso } from 'react-virtuoso'
-import { canvases as seedCanvases, resources as seedResources } from '../data'
-import { CopyLinkButton, IconButton, TabButton } from './Primitives'
+import { useEffect, useState, type MouseEvent } from 'react'
+import { Bot, ChevronDown, ChevronRight, FileText, Link2, PanelLeft, Plus, Search, Send, Settings, Sparkles } from 'lucide-react'
+import { canvases as seedCanvases, projects as seedProjects, resources as seedResources, type Canvas } from '../data'
+import { CopyLinkButton, IconButton } from './Primitives'
 import { useLocalStorage } from '../hooks/useLocalStorage'
 import { completeChat, type ChatMessage } from '../services/api'
 import { showPrompt, showToast } from './Popups'
 
-export default function LeftPanel() {
-  const [tab, setTab] = useState<'canvases' | 'chat'>(() => window.location.hash.startsWith('#chat-') ? 'chat' : 'canvases')
+export function CanvasPanel({ margin = false, onDock }: { margin?: boolean; onDock?: () => void }) {
   const [query, setQuery] = useState('')
   const [canvases, setCanvases] = useLocalStorage('fieldnotes:canvases', seedCanvases)
+  const [projects] = useLocalStorage('fieldnotes:projects', seedProjects)
+  const [collapsed, setCollapsed] = useLocalStorage<Record<string, boolean>>('fieldnotes:collapsed-projects', {})
+  const [headings, setHeadings] = useState<{ id: string; title: string; level: number }[]>([])
   const [activeId, setActiveId] = useState(() => {
     const stored = localStorage.getItem('fieldnotes:active-canvas')
     return stored ? (JSON.parse(stored) as { id: string }).id : 'attention'
   })
-  const filtered = canvases.filter((canvas) => canvas.title.toLowerCase().includes(query.toLowerCase()))
+  const normalized = canvases.map((canvas) => ({ ...canvas, projectId: canvas.projectId ?? (canvas.group === 'Active' ? 'attention-project' : canvas.group === 'Archive' ? 'fieldwork' : undefined) }))
+  const filtered = normalized.filter((canvas) => canvas.title.toLowerCase().includes(query.toLowerCase()))
   const createCanvas = () => {
     void (async () => {
       const title = await showPrompt({ title: 'New canvas', message: 'Name this canvas.', placeholder: 'Canvas name', confirmLabel: 'Create' })
       if (!title) return
-      const canvas = { id: crypto.randomUUID(), title: title.trim(), emoji: '◇', updated: 'Now', group: 'Active' }
+      const canvas: Canvas = { id: crypto.randomUUID(), title: title.trim(), emoji: '◇', updated: 'Now' }
       setCanvases([canvas, ...canvases])
       selectCanvas(canvas)
     })()
@@ -31,38 +33,45 @@ export default function LeftPanel() {
     window.dispatchEvent(new CustomEvent('fieldnotes:canvas-selected', { detail: canvas }))
   }
   useEffect(() => {
-    const hash = () => { if (window.location.hash.startsWith('#chat-')) setTab('chat') }
-    window.addEventListener('hashchange', hash)
-    return () => window.removeEventListener('hashchange', hash)
-  }, [])
+    if (!margin) return
+    const read = () => setHeadings(Array.from(document.querySelectorAll<HTMLElement>('.note-editor h1, .note-editor h2, .note-editor h3')).map((heading, index) => {
+      if (!heading.id) heading.id = `document-heading-${index}`
+      return { id: heading.id, title: heading.textContent ?? '', level: Number(heading.tagName.slice(1)) }
+    }))
+    read()
+    const observer = new MutationObserver(read)
+    const editor = document.querySelector('.note-editor')
+    if (editor) observer.observe(editor, { childList: true, subtree: true, characterData: true })
+    return () => observer.disconnect()
+  }, [activeId, margin])
+  const projectAction = (projectId: string, kind: 'settings' | 'invite') => window.dispatchEvent(new CustomEvent('fieldnotes:open-permissions', { detail: { dialog: kind, scope: 'project', projectId } }))
+  const canvasAction = (canvas: Canvas, kind: 'settings' | 'invite') => { selectCanvas(canvas); window.dispatchEvent(new CustomEvent('fieldnotes:open-permissions', { detail: { dialog: kind, scope: 'canvas', canvasId: canvas.id } })) }
+  const scrollToHeading = (event: MouseEvent<HTMLAnchorElement>, id: string) => {
+    event.preventDefault()
+    const target = document.getElementById(id)
+    const scrollRoot = target?.closest<HTMLElement>('.app-shell')
+    if (!target || !scrollRoot) return
+    const stickyOffset = Number.parseFloat(getComputedStyle(scrollRoot).getPropertyValue('--canvas-scroll-offset')) || 160
+    const top = target.getBoundingClientRect().top - scrollRoot.getBoundingClientRect().top + scrollRoot.scrollTop - stickyOffset
+    scrollRoot.scrollTo({ top, behavior: 'smooth' })
+    window.history.replaceState(null, '', `#${id}`)
+  }
+  const canvasRow = (canvas: Canvas) => <div className="canvas-row" key={canvas.id}><a href={`#canvas-${canvas.id}`} onClick={() => selectCanvas(canvas)} className={`canvas-item ${canvas.id === activeId ? 'is-current' : ''}`}><span className="canvas-symbol">{canvas.emoji}</span><span className="canvas-name">{canvas.title}</span><time>{canvas.updated}</time></a><div className="directory-actions"><button title="Canvas permissions" aria-label={`${canvas.title} permissions`} onClick={() => canvasAction(canvas, 'settings')}><Settings size={12}/></button><button title="Copy canvas invite" aria-label={`Create invite for ${canvas.title}`} onClick={() => canvasAction(canvas, 'invite')}><Link2 size={12}/></button></div></div>
 
-  return <aside className="side-panel left-panel">
-    <div className="brand-row">
-      <a className="brand" href="#top"><span className="brand-mark">F</span><span>Fieldnotes</span></a>
-      <IconButton label="Workspace options"><MoreHorizontal size={18} /></IconButton>
-    </div>
-    <div className="panel-tabs" role="tablist">
-      <TabButton active={tab === 'canvases'} onClick={() => setTab('canvases')}><FolderOpen size={16} /> Canvases</TabButton>
-      <TabButton active={tab === 'chat'} onClick={() => setTab('chat')}><MessageSquare size={16} /> Chat</TabButton>
-    </div>
-
-    {tab === 'canvases' ? <>
-      <div className="search-box"><Search size={16} /><input aria-label="Search canvases" placeholder="Search canvases" value={query} onChange={(event) => setQuery(event.target.value)} /><kbd>⌘ K</kbd></div>
+  return <div className={`canvas-directory ${margin ? 'is-margin' : ''}`}>
+    <div className="search-box"><Search size={16} /><input aria-label="Search canvases" placeholder="Search canvases" value={query} onChange={(event) => setQuery(event.target.value)} />{margin ? <button className="margin-dock-button" type="button" onClick={onDock} aria-label="Dock Canvases in the left panel" title="Dock in left panel"><PanelLeft size={15}/></button> : <kbd>⌘ K</kbd>}</div>
+    {!margin && <>
       <button className="new-canvas" onClick={createCanvas}><span><Plus size={17} /> New canvas</span><span className="new-canvas-shortcut">N</span></button>
-      <div className="canvas-list" aria-label="Canvas directory">
-        <Virtuoso data={filtered} itemContent={(_, canvas) => <div className="canvas-group-wrap">
-          {(filtered.findIndex((item) => item.group === canvas.group) === filtered.indexOf(canvas)) && <div className="group-label"><span>{canvas.group}</span><ChevronDown size={14} /></div>}
-          <a href={`#canvas-${canvas.id}`} onClick={() => selectCanvas(canvas)} className={`canvas-item ${canvas.id === activeId ? 'is-current' : ''}`}>
-            <span className="canvas-symbol">{canvas.emoji}</span><span className="canvas-name">{canvas.title}</span><time>{canvas.updated}</time>
-          </a>
-        </div>} />
-      </div>
-      <button className="archive-link"><Archive size={16} /> View archive <span>12</span></button>
-    </> : <ChatPanel />}
-  </aside>
+    </>}
+    <div className="canvas-list" aria-label="Canvas directory">
+      {projects.map((project) => { const projectCanvases = filtered.filter((canvas) => canvas.projectId === project.id); if (!projectCanvases.length) return null; const closed = collapsed[project.id]; return <section className="canvas-project" key={project.id}><div className="group-label"><button className="project-toggle" onClick={() => setCollapsed({ ...collapsed, [project.id]: !closed })}>{closed ? <ChevronRight size={14}/> : <ChevronDown size={14}/>}<strong>{project.title}</strong></button><span className="directory-actions"><button aria-label={`${project.title} permissions`} title="Project permissions" onClick={() => projectAction(project.id, 'settings')}><Settings size={12}/></button><button aria-label={`Create invite for ${project.title}`} title="Copy project invite" onClick={() => projectAction(project.id, 'invite')}><Link2 size={12}/></button></span></div>{!closed && projectCanvases.map(canvasRow)}</section> })}
+      {filtered.filter((canvas) => !canvas.projectId).map(canvasRow)}
+      {margin && headings.length > 0 && <nav className="document-outline" aria-label="Canvas headings"><span>On this canvas</span>{headings.map((heading) => <a key={heading.id} className={`outline-level-${heading.level}`} href={`#${heading.id}`} onClick={(event) => scrollToHeading(event, heading.id)}>{heading.title}</a>)}</nav>}
+    </div>
+  </div>
 }
 
-function ChatPanel() {
+export function ChatPanel() {
   const [message, setMessage] = useState('')
   const [messages, setMessages] = useLocalStorage<ChatMessage[]>('fieldnotes:chat', [
     { id: 'welcome-user', role: 'user', content: 'What does it mean to treat attention as a design material?' },

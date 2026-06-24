@@ -1,14 +1,17 @@
-export type Canvas = { id: string; title: string; emoji: string; updated: string; group: string }
+export type Canvas = { id: string; title: string; emoji: string; updated: string; projectId?: string; group?: string }
+export type Project = { id: string; title: string }
 export type Resource = { id: string; kind: 'article' | 'pdf' | 'video' | 'chat'; title: string; meta: string; accent: string; url?: string; content?: string }
 export type Comment = { id: string; author: string; authorId?: string; avatar?: string; initials: string; time: string; body: string; replies?: Comment[] }
 
 export const canvases: Canvas[] = [
-  { id: 'attention', title: 'Designing for attention', emoji: '✦', updated: 'Now', group: 'Active' },
-  { id: 'slow-web', title: 'The slow web', emoji: '◌', updated: '2h', group: 'Active' },
-  { id: 'tools-thought', title: 'Tools for thought', emoji: '⌁', updated: 'Tue', group: 'Active' },
-  { id: 'ambient', title: 'Ambient interfaces', emoji: '◇', updated: 'Jun 18', group: 'Archive' },
-  { id: 'field-study', title: 'Field study / Berlin', emoji: '⌖', updated: 'Jun 12', group: 'Archive' },
+  { id: 'attention', title: 'Designing for attention', emoji: '✦', updated: 'Now', projectId: 'attention-project' },
+  { id: 'slow-web', title: 'The slow web', emoji: '◌', updated: '2h', projectId: 'attention-project' },
+  { id: 'tools-thought', title: 'Tools for thought', emoji: '⌁', updated: 'Tue' },
+  { id: 'ambient', title: 'Ambient interfaces', emoji: '◇', updated: 'Jun 18', projectId: 'fieldwork' },
+  { id: 'field-study', title: 'Field study / Berlin', emoji: '⌖', updated: 'Jun 12', projectId: 'fieldwork' },
 ]
+
+export const projects: Project[] = [{ id: 'attention-project', title: 'Attention research' }, { id: 'fieldwork', title: 'Fieldwork' }]
 
 export const resources: Resource[] = [
   { id: 'res-calm', kind: 'article', title: 'Calm technology and the future of attention', meta: 'Article · 12 min read', accent: '#c96e4b' },

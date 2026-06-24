@@ -18,22 +18,51 @@
   body { @apply min-w-80 overflow-hidden bg-warm font-sans text-ink antialiased; }
   button, input, textarea { font: inherit; }
   button, a { -webkit-tap-highlight-color: transparent; }
+  button, a, [role="button"] { @apply cursor-pointer; }
   button { @apply text-inherit; }
+  button:disabled { @apply cursor-not-allowed; }
   :focus-visible { @apply outline-2 outline-offset-2 outline-emerald-700; }
 }
 
 @layer components {
-  .app-shell { @apply relative mx-auto grid h-dvh max-w-[1920px] items-start overflow-y-auto bg-paper; grid-template-columns: var(--left-panel-width, 340px) minmax(0, 1fr) var(--right-panel-width, 360px); }
-  .side-panel { @apply sticky top-0 flex h-dvh min-w-0 flex-col overflow-hidden bg-warm; }
-  .left-panel { @apply border-r border-rule; }
-  .right-panel { @apply border-l border-rule; }
+  .app-shell { --canvas-header-height: 59px; --canvas-scroll-offset: 160px; @apply relative mx-auto grid h-dvh max-w-[1920px] items-start overflow-y-auto bg-paper; grid-template-columns: var(--left-panel-width, 340px) minmax(0, 1fr) var(--right-panel-width, 360px); scroll-padding-top: var(--canvas-scroll-offset); }
+  .side-panel { @apply sticky top-0 z-30 h-dvh min-w-0 overflow-visible bg-warm; }
+  .side-panel-inner { @apply flex h-full min-w-0 flex-col overflow-hidden; }
+  .left-panel { @apply border-r border-rule; grid-column: 1; }
+  .right-panel { @apply border-l border-rule; grid-column: 3; }
+  .dock-panel-heading { @apply flex h-[59px] shrink-0 items-center border-b border-rule px-[18px] text-xs font-semibold text-stone-500; }
+  .dock-view { @apply hidden min-h-0 flex-1 flex-col; }
+  .dock-view.is-active { @apply flex; }
+  .dock-tabs { @apply relative gap-4 overflow-x-auto; scrollbar-width: none; }
+  .dock-tabs::-webkit-scrollbar { display: none; }
+  .dock-tab { @apply shrink-0 cursor-grab; }
+  .dock-tab:active { @apply cursor-grabbing; }
+  .dock-grip { @apply -mr-1 text-stone-300; }
+  .dock-drop-marker { @apply pointer-events-none absolute bottom-1.5 z-10 h-8 w-0.5 -translate-x-1/2 rounded-full bg-emerald-700 shadow-[0_0_0_2px_#f4f1ea]; }
+  .canvas-margin-dock { @apply fixed top-[59px] bottom-0 left-0 z-20 hidden min-w-0 flex-col overflow-hidden bg-transparent; width: calc(max(0px, (100vw - 1920px) / 2) + max(36px, (min(1920px, 100vw) - var(--effective-right-panel-width, 0px) - 760px) / 2)); }
+  .app-shell.margin-open .canvas-margin-dock { @apply flex; }
+  .canvas-margin-dock .panel-tabs { @apply h-[59px] items-center border-b-0 bg-transparent px-5; }
+  .canvas-margin-dock > .panel-tabs, .canvas-margin-dock > .dock-view { width: min(260px, 100%); margin-left: auto; }
+  .canvas-margin-dock .tab-button::after { @apply hidden; }
+  .canvas-margin-dock .dock-tab { @apply text-forest; }
+  .dock-drop-edge { @apply pointer-events-none fixed inset-y-0 z-[90] w-5 transition-all; }
+  .tab-dragging .dock-drop-edge { @apply pointer-events-auto w-16; }
+  .dock-drop-left { @apply left-0; }
+  .dock-drop-right { @apply right-0; }
+  .dock-drop-edge.is-over { @apply bg-emerald-700/20 ring-2 ring-inset ring-emerald-700; }
+  .margin-dock-drop { @apply pointer-events-none fixed top-16 bottom-4 z-[85] w-5 transition-all; left: calc(max(0px, (100vw - 1920px) / 2) + var(--effective-left-panel-width, 0px)); }
+  .tab-dragging-canvases .margin-dock-drop { @apply pointer-events-auto; width: max(72px, (min(1920px, 100vw) - var(--effective-left-panel-width, 0px) - var(--effective-right-panel-width, 0px) - 760px) / 2); }
+  .margin-dock-drop span { @apply pointer-events-none absolute top-3 left-2 hidden rounded-md bg-forest px-2 py-1 text-[9px] whitespace-nowrap text-white; }
+  .tab-dragging-canvases .margin-dock-drop.is-over { @apply rounded-lg bg-emerald-700/20 ring-2 ring-inset ring-emerald-700; }
+  .tab-dragging-canvases .margin-dock-drop.is-over span { @apply block; }
   .right-panel-view { @apply hidden min-h-0 flex-1 flex-col; }
   .right-panel-view.is-active { @apply flex; }
+  .annotation-dock-target { @apply flex min-h-0 flex-1 flex-col; }
   .docked-annotations { @apply flex min-h-0 flex-1 flex-col gap-3 overflow-y-auto p-3.5; }
   .annotation-thread-docked { @apply shrink-0; }
   .annotation-thread-docked .annotation-card { @apply w-full shadow-sm; }
   .annotation-thread-docked.is-active .annotation-card { @apply border-emerald-800 ring-2 ring-emerald-800/25; }
-  .center-panel { @apply relative z-[1] min-h-dvh min-w-0 overflow-visible scroll-smooth bg-paper; }
+  .center-panel { @apply relative z-[1] min-h-dvh min-w-0 overflow-visible scroll-smooth bg-paper; grid-column: 2; }
   .brand-row, .canvas-header { @apply flex h-[59px] shrink-0 items-center justify-between border-b border-rule px-[18px]; }
   .brand { @apply flex items-center gap-2.5 font-serif text-xl font-semibold text-ink no-underline; }
   .brand-mark { @apply grid size-7 place-items-center rounded-lg bg-forest font-serif text-[17px] text-white; }
@@ -49,16 +78,38 @@
   .new-canvas { @apply mx-3.5 mb-3 flex h-[39px] cursor-pointer items-center justify-between rounded-lg border border-emerald-900/25 bg-sage px-2.5 text-[13px] font-semibold text-forest; }
   .new-canvas > span:first-child { @apply flex items-center gap-2; }
   .new-canvas-shortcut { @apply text-[10px] opacity-55; }
-  .canvas-list { @apply min-h-0 flex-1; }
+  .canvas-directory { @apply flex min-h-0 flex-1 flex-col; }
+  .canvas-list { @apply min-h-0 flex-1 overflow-y-auto pb-4; }
   .canvas-group-wrap { @apply px-2; }
   .group-label { @apply flex items-center justify-between px-2.5 pt-3 pb-1 text-[10px] font-bold tracking-[.1em] text-stone-400 uppercase; }
+  .project-toggle { @apply flex min-w-0 flex-1 items-center gap-1 border-0 bg-transparent p-0 text-left uppercase; }
+  .project-toggle strong { @apply truncate; }
+  .canvas-row { @apply relative mx-2; }
+  .canvas-row .canvas-item { @apply mx-0 pr-14; }
+  .directory-actions { @apply flex items-center gap-0.5; }
+  .canvas-row > .directory-actions { @apply absolute top-1.5 right-1 opacity-0; }
+  .canvas-row:hover > .directory-actions, .canvas-row:focus-within > .directory-actions { @apply opacity-100; }
+  .directory-actions button { @apply grid size-7 place-items-center rounded-md border-0 bg-transparent p-0 text-stone-400 hover:bg-stone-200 hover:text-forest; }
   .canvas-item { @apply flex h-10 min-w-0 items-center gap-2 rounded-lg px-2.5 text-[13px] text-stone-600 no-underline hover:bg-ink/5; }
   .canvas-item.is-current { @apply bg-[#e3e7df] font-semibold text-forest; }
   .canvas-symbol { @apply w-[19px] text-center text-[15px] text-stone-500; }
   .canvas-name { @apply flex-1 truncate; }
   .canvas-item time { @apply text-[10px] text-stone-400; }
-  .archive-link { @apply mx-3.5 mt-1.5 mb-3.5 flex shrink-0 cursor-pointer items-center gap-2 border-0 border-t border-rule bg-transparent px-2 py-2.5 text-xs text-stone-500; }
-  .archive-link span { @apply ml-auto; }
+  .canvas-row:hover .canvas-item time, .canvas-row:focus-within .canvas-item time { @apply invisible; }
+  .canvas-directory.is-margin { @apply min-h-0 bg-transparent; }
+  .canvas-directory.is-margin .search-box { @apply mx-5 mt-1 mb-3 rounded-none border-0 border-b border-rule bg-transparent px-0; }
+  .margin-dock-button { @apply grid size-7 shrink-0 place-items-center rounded-md border-0 bg-transparent p-0 text-stone-500 hover:bg-stone-100 hover:text-forest; }
+  .canvas-directory.is-margin .canvas-list { @apply px-3 pt-0; }
+  .canvas-directory.is-margin .canvas-item { @apply h-auto bg-transparent! px-2 py-1.5 text-xs underline-offset-2 hover:underline; }
+  .canvas-directory.is-margin .canvas-item.is-current { @apply font-bold text-forest; }
+  .canvas-directory.is-margin .canvas-symbol, .canvas-directory.is-margin .canvas-item time, .canvas-directory.is-margin .canvas-row > .directory-actions { @apply hidden; }
+  .canvas-directory.is-margin .group-label > .directory-actions { @apply flex; }
+  .canvas-directory.is-margin .group-label { @apply px-2 pt-4 pb-1; }
+  .canvas-directory.is-margin .document-outline a { @apply bg-transparent hover:bg-transparent hover:underline; }
+  .document-outline { @apply mx-3 mt-5 flex flex-col border-t border-rule pt-4; }
+  .document-outline > span { @apply mb-2 text-[9px] font-bold tracking-widest text-stone-400 uppercase; }
+  .document-outline a { @apply rounded-md px-2 py-1.5 text-[11px] font-semibold text-stone-600 no-underline hover:bg-stone-100 hover:text-forest; }
+  .document-outline a.outline-level-3 { @apply pl-5 font-medium text-stone-500; }
   .chat-panel { @apply flex min-h-0 flex-1 flex-col p-3.5; }
   .chat-heading { @apply flex items-center justify-between; }
   .eyebrow { @apply block text-[9px] font-bold tracking-[.08em] text-stone-400 uppercase; }
@@ -99,15 +150,16 @@
   .tag-form { @apply flex items-center gap-1 rounded-full border border-stone-300 bg-white px-2 py-1 text-[10px] text-stone-400; }
   .tag-form input { @apply w-24 border-0 bg-transparent outline-0; }
   .tag-add { @apply grid size-6 cursor-pointer place-items-center rounded-full border border-stone-300 bg-transparent text-stone-500 hover:bg-stone-100 hover:text-ink; }
-  .content-tabs { @apply mx-auto flex h-[47px] w-[min(760px,calc(100%_-_72px))] items-end gap-6 border-b border-rule; }
+  .content-tabs { @apply sticky top-[59px] z-20 mx-auto flex h-[47px] w-[min(760px,calc(100%_-_72px))] items-end gap-6 border-b border-rule bg-paper/95 backdrop-blur-lg; }
   .note-wrap, .resources-view, .discussion-view { @apply mx-auto w-[min(760px,calc(100%_-_72px))]; }
-  .format-bar { @apply sticky top-[59px] z-10 flex h-[42px] items-center gap-px border-b border-stone-200 bg-paper/95 backdrop-blur-lg; }
+  .format-bar { @apply sticky top-[106px] z-10 flex h-[42px] items-center gap-px border-b border-stone-200 bg-paper/95 backdrop-blur-lg; }
   .format-bar .icon-button { @apply h-7 w-[30px]; }
   .divider { @apply mx-1.5 h-4 w-px bg-rule; }
   .format-spacer { @apply flex-1; }
   .markdown-label { @apply text-[9px] text-stone-400; }
   .note-editor { @apply min-h-[calc(100dvh-280px)] px-1 pt-7 pb-40 font-serif text-[17px] leading-[1.76] text-stone-700 outline-none; }
   .note-editor h2 { @apply mt-8 mb-2.5 font-serif text-[25px] leading-tight font-semibold text-ink first:mt-0; }
+  .note-editor h1, .note-editor h2, .note-editor h3, .deep-link-target { scroll-margin-top: var(--canvas-scroll-offset); }
   .note-editor p { @apply mt-0 mb-4; }
   .note-editor mark, .note-editor .annotation-highlight { @apply cursor-pointer text-inherit; background: linear-gradient(transparent 10%, #f5dfa0 10%, #f5dfa0 90%, transparent 90%); box-decoration-break: clone; -webkit-box-decoration-break: clone; }
   .note-editor .annotation-highlight:hover, .note-editor .annotation-highlight:focus, .note-editor .annotation-highlight.is-annotation-active { background: linear-gradient(transparent 6%, #efcb68 6%, #efcb68 94%, transparent 94%); }
@@ -202,7 +254,7 @@
   .collaboration-backdrop { @apply fixed inset-0 z-[200] grid place-items-center bg-stone-950/25 p-4 backdrop-blur-[2px]; }
   .collaboration-dialog { @apply w-full max-w-lg rounded-2xl border border-stone-200 bg-white p-5 shadow-2xl; }
   .collaboration-dialog-head { @apply flex items-start justify-between; }
-  .collaboration-dialog-head h2 { @apply mt-1 font-serif text-xl font-semibold; }
+  .collaboration-dialog-head h2 { @apply mt-1 mb-0 font-serif text-xl font-semibold; }
   .permission-list { @apply my-5 divide-y divide-stone-100 border-y border-stone-100; }
   .permission-select, .invite-permission { @apply flex items-center justify-between gap-4 py-3; }
   .permission-select span, .invite-permission span { @apply flex min-w-0 flex-col; }
@@ -238,18 +290,20 @@
   .discord-preview { @apply mt-5 mb-3 rounded-lg bg-stone-200 p-3 text-left; } .discord-preview span, .discord-preview small { @apply block; }
   .discord-preview span { @apply text-[10px] font-semibold text-indigo-500; } .discord-preview small { @apply mt-1 text-[8px] text-stone-400; }
   .discord-panel a { @apply inline-flex items-center gap-1 text-[10px] font-semibold text-forest; }
-  .desktop-panel-toggle { @apply fixed top-[66px] z-40 hidden size-[25px] cursor-pointer place-items-center rounded-md border border-rule bg-paper text-stone-500; }
-  .left-toggle { left: calc(max(0px, (100vw - 1920px) / 2) + var(--left-panel-width, 340px) - 12px); } .right-toggle { right: calc(max(0px, (100vw - 1920px) / 2) + var(--right-panel-width, 360px) + 4px); } .app-shell:hover .desktop-panel-toggle { @apply grid; }
-  .panel-resizer { @apply fixed inset-y-0 z-30 hidden w-2 cursor-col-resize touch-none; }
+  .desktop-panel-toggle { @apply fixed inset-y-0 z-[100] grid w-[25px] cursor-pointer place-items-start border-0 bg-transparent p-0 text-stone-500; }
+  .desktop-panel-toggle svg { @apply mt-[66px] size-[25px] rounded-md border border-rule bg-paper p-1 shadow-sm; }
+  .left-toggle { left: calc(max(0px, (100vw - 1920px) / 2) + var(--left-panel-width, 340px) - 12px); } .right-toggle { right: calc(max(0px, (100vw - 1920px) / 2) + var(--right-panel-width, 360px) + 4px); }
+  .panel-resizer { @apply absolute inset-y-0 z-40 block w-2 cursor-col-resize touch-none; }
   .panel-resizer::after { content: ''; @apply absolute inset-y-0 left-1/2 w-px bg-transparent; }
   .panel-resizer:hover::after, .resizing-panels .panel-resizer::after { @apply bg-emerald-700/45; }
-  .left-resizer { left: calc(max(0px, (100vw - 1920px) / 2) + var(--left-panel-width, 340px) - 4px); } .right-resizer { right: calc(max(0px, (100vw - 1920px) / 2) + var(--right-panel-width, 360px) - 4px); }
-  .app-shell:hover .panel-resizer { @apply block; }
+  .left-resizer { @apply -right-1; }
+  .right-resizer { @apply -left-1; }
   .resizing-panels { @apply cursor-col-resize select-none; }
   .app-shell.left-collapsed { grid-template-columns: 0 minmax(0, 1fr) var(--right-panel-width, 360px); } .app-shell.right-collapsed { grid-template-columns: var(--left-panel-width, 340px) minmax(0, 1fr) 0; }
   .app-shell.left-collapsed.right-collapsed { grid-template-columns: 0 minmax(0, 1fr) 0; }
   .app-shell.left-collapsed .left-panel, .app-shell.right-collapsed .right-panel { @apply invisible; }
-  .app-shell.left-collapsed .left-toggle { @apply left-1.5 rotate-180; } .app-shell.right-collapsed .right-toggle { @apply right-1.5 rotate-180; }
+  .app-shell.left-collapsed .left-toggle { @apply left-1.5; } .app-shell.right-collapsed .right-toggle { @apply right-1.5; }
+  .app-shell.left-collapsed .left-toggle svg, .app-shell.right-collapsed .right-toggle svg { @apply rotate-180; }
   .mobile-nav { @apply hidden; }
 }
 
@@ -258,9 +312,10 @@
 
 @media (max-width: 820px) {
   .app-shell, .app-shell.left-collapsed, .app-shell.right-collapsed { @apply block h-dvh pb-[calc(60px+env(safe-area-inset-bottom))]; }
-  .left-panel, .right-panel, .center-panel { @apply invisible hidden h-full w-full border-0; }
+  .left-panel, .right-panel, .center-panel, .canvas-margin-dock { @apply invisible hidden h-full w-full border-0; }
   .app-shell[data-mobile-panel="left"] .left-panel { @apply visible flex; } .app-shell[data-mobile-panel="center"] .center-panel { @apply visible block; } .app-shell[data-mobile-panel="right"] .right-panel { @apply visible flex; }
   .desktop-panel-toggle { @apply hidden!; }
+  .margin-dock-drop, .dock-drop-edge, .panel-resizer { @apply hidden!; }
   .mobile-nav { @apply fixed inset-x-0 bottom-0 z-50 grid min-h-[60px] grid-cols-3 border-t border-rule bg-paper/95 pb-[env(safe-area-inset-bottom)] backdrop-blur-xl; }
   .mobile-nav button { @apply relative flex flex-col items-center justify-center gap-0.5 border-0 bg-transparent text-[9px] text-stone-500; } .mobile-nav button.active { @apply text-forest; }
   .mobile-nav i { @apply absolute top-1.5 ml-6 grid size-[15px] place-items-center rounded-full bg-clay text-[8px] not-italic text-white; }
@@ -269,10 +324,12 @@
 }
 
 @media (max-width: 560px) {
+  .app-shell { --canvas-header-height: 53px; --canvas-scroll-offset: 154px; }
   .canvas-header { @apply h-[53px] px-3; } .breadcrumbs span:first-child, .breadcrumbs span:nth-child(2), .saved-state { @apply hidden; }
   .document-head, .content-tabs, .note-wrap, .resources-view { @apply w-[calc(100%_-_32px)]; }
   .document-head { @apply mt-8 mb-6; } .document-head h1 { @apply text-[38px]; } .document-head > p { @apply text-base; }
-  .format-bar { @apply top-[53px] overflow-x-auto; } .markdown-label { @apply hidden; } .note-editor { @apply pb-24 text-base; }
+  .content-tabs { @apply top-[53px]; }
+  .format-bar { @apply top-[100px] overflow-x-auto; } .markdown-label { @apply hidden; } .note-editor { @apply pb-24 text-base; }
   .resource-actions .text-action { @apply hidden; } .drop-zone { @apply justify-start px-4; }
 }
 
