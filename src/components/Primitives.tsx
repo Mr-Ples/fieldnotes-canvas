@@ -11,8 +11,8 @@ export function TabButton({ active, children, ...props }: ButtonHTMLAttributes<H
   return <button role="tab" aria-selected={active} className={`tab-button ${active ? 'is-active' : ''}`} {...props}>{children}</button>
 }
 
-export function Avatar({ initials, color = 'sage' }: { initials: string; color?: 'sage' | 'clay' | 'ink' }) {
-  return <span className={`avatar avatar-${color}`}>{initials}</span>
+export function Avatar({ initials, color = 'sage', src, name }: { initials: string; color?: 'sage' | 'clay' | 'ink'; src?: string; name?: string }) {
+  return src ? <img className="avatar object-cover" src={src} alt={name ? `${name}'s avatar` : ''}/> : <span className={`avatar avatar-${color}`}>{initials}</span>
 }
 
 export function CopyLinkButton({ target }: { target: string }) {

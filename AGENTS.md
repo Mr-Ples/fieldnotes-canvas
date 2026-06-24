@@ -1,0 +1,4 @@
+- interactable links and buttons and widgets should have cursor pointer
+- popups/pop overs should be dismissible by clicking outside them
+- important buttons should have a confirmation dialogue
+- buttons should have an indication that the action worked or is working, e.g. invite links and coping links etc

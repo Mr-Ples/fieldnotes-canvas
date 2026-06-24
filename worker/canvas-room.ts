@@ -39,6 +39,8 @@ export type DiscordEvent = {
 export type ChatSettings = {
   locked: boolean
   loginOnly: boolean
+  canvasMode: 'public' | 'login' | 'readonly'
+  llmMode: 'public' | 'login' | 'readonly'
 }
 
 export class CanvasRoom extends DurableObject<Env> {
@@ -74,20 +76,23 @@ export class CanvasRoom extends DurableObject<Env> {
         );
         CREATE TABLE IF NOT EXISTS invites (
           token TEXT PRIMARY KEY,
-          created_at INTEGER NOT NULL
+          created_at INTEGER NOT NULL,
+          permissions TEXT NOT NULL DEFAULT '{}'
         );
       `)
       const reactionColumns = this.ctx.storage.sql.exec<{ name: string }>('PRAGMA table_info(reactions)').toArray()
       if (!reactionColumns.some((column) => column.name === 'user_name')) this.ctx.storage.sql.exec('ALTER TABLE reactions ADD COLUMN user_name TEXT')
+      const inviteColumns = this.ctx.storage.sql.exec<{ name: string }>('PRAGMA table_info(invites)').toArray()
+      if (!inviteColumns.some((column) => column.name === 'permissions')) this.ctx.storage.sql.exec("ALTER TABLE invites ADD COLUMN permissions TEXT NOT NULL DEFAULT '{}'")
     })
   }
 
   async getSettings(): Promise<ChatSettings> {
     const value = this.ctx.storage.sql.exec<{ value: string }>("SELECT value FROM config WHERE key = 'settings'").toArray()[0]?.value
     if (value) {
-      try { return JSON.parse(value) as ChatSettings } catch {}
+      try { return { canvasMode: 'public', llmMode: 'public', ...JSON.parse(value) } as ChatSettings } catch {}
     }
-    return { locked: false, loginOnly: false }
+    return { locked: false, loginOnly: false, canvasMode: 'public', llmMode: 'public' }
   }
 
   async setSettings(settings: ChatSettings): Promise<void> {
@@ -95,9 +100,9 @@ export class CanvasRoom extends DurableObject<Env> {
     this.broadcast({ type: 'settings', settings })
   }
 
-  async createInvite(): Promise<string> {
+  async createInvite(permissions: Record<string, boolean> = {}): Promise<string> {
     const token = crypto.randomUUID()
-    this.ctx.storage.sql.exec("INSERT INTO invites(token, created_at) VALUES (?, ?)", token, Date.now())
+    this.ctx.storage.sql.exec("INSERT INTO invites(token, created_at, permissions) VALUES (?, ?, ?)", token, Date.now(), JSON.stringify(permissions))
     return token
   }
 
@@ -107,12 +112,22 @@ export class CanvasRoom extends DurableObject<Env> {
     return Boolean(row?.found)
   }
 
+  async verifyInvitePermission(token: string | null, permission: 'canvas' | 'llm' | 'chat'): Promise<boolean> {
+    if (!token) return false
+    const row = this.ctx.storage.sql.exec<{ permissions: string }>('SELECT permissions FROM invites WHERE token = ?', token).toArray()[0]
+    if (!row) return false
+    try {
+      const permissions = JSON.parse(row.permissions) as Record<string, boolean>
+      return permissions[permission] !== false
+    } catch { return true }
+  }
+
   async canParticipate(userId: string, ownerToken: string | null, inviteToken: string | null): Promise<boolean> {
     if (ownerToken) {
       const isOwner = await this.claimOwnerToken(ownerToken)
       if (isOwner) return true
     }
-    if (await this.verifyInvite(inviteToken)) return true
+    if (await this.verifyInvitePermission(inviteToken, 'chat')) return true
 
     const settings = await this.getSettings()
     if (settings.locked) return false
@@ -120,6 +135,13 @@ export class CanvasRoom extends DurableObject<Env> {
       return !userId.startsWith('guest:')
     }
     return true
+  }
+
+  async canUse(permission: 'canvas' | 'llm', userId: string, ownerToken: string | null, inviteToken: string | null): Promise<boolean> {
+    if (ownerToken && await this.claimOwnerToken(ownerToken)) return true
+    if (await this.verifyInvitePermission(inviteToken, permission)) return true
+    const mode = (await this.getSettings())[permission === 'canvas' ? 'canvasMode' : 'llmMode']
+    return mode === 'public' || mode === 'login' && !userId.startsWith('guest:')
   }
 
   async fetch(request: Request): Promise<Response> {
@@ -136,11 +158,13 @@ export class CanvasRoom extends DurableObject<Env> {
       connectedAt: Date.now(),
       authorId: request.headers.get('x-fieldnotes-author-id') ?? 'website',
       authorName: decodeURIComponent(request.headers.get('x-fieldnotes-author-name') ?? 'Someone'),
+      authorAvatar: request.headers.get('x-fieldnotes-author-avatar') ?? undefined,
       guest: request.headers.get('x-fieldnotes-guest') === 'true',
       inviteToken: inviteToken ?? undefined,
       ownerToken: ownerToken ?? undefined,
     })
     server.send(JSON.stringify({ type: 'ready', messages: await this.listMessages(50), settings: await this.getSettings() }))
+    this.broadcastPresence()
     return new Response(null, { status: 101, webSocket: client })
   }
 
@@ -164,6 +188,15 @@ export class CanvasRoom extends DurableObject<Env> {
 
   async webSocketClose(ws: WebSocket, code: number, reason: string) {
     ws.close(code, reason)
+    this.broadcastPresence()
+  }
+
+  private broadcastPresence() {
+    const participants = this.ctx.getWebSockets().flatMap((socket) => {
+      const value = socket.deserializeAttachment() as { authorId?: string; authorName?: string; authorAvatar?: string } | null
+      return value?.authorId ? [{ id: value.authorId, name: value.authorName ?? 'Someone', avatar: value.authorAvatar }] : []
+    }).filter((value, index, all) => all.findIndex((candidate) => candidate.id === value.id) === index)
+    this.broadcast({ type: 'presence', participants })
   }
 
   async listMessages(limit = 50, before?: number): Promise<ChatMessage[]> {

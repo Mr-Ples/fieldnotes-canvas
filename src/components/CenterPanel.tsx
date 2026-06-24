@@ -1,19 +1,29 @@
 import { useEffect, useRef, useState, type FormEvent, type KeyboardEvent, type RefObject } from 'react'
-import { ArrowUpRight, Bold, Check, ChevronDown, Code2, File, FileText, Heading2, Italic, Link2, List, MessageCircle, MoreHorizontal, Plus, Quote, Reply, Send, Upload, Video, X } from 'lucide-react'
+import { Bold, Check, ChevronDown, Code2, File, FileText, Heading2, Italic, Link2, List, LogOut, MessageCircle, MoreHorizontal, Plus, Quote, Reply, Send, Settings, Trash2, Upload, UserPlus, Video, X } from 'lucide-react'
 import { canvases, comments, resources, type Canvas, type Comment } from '../data'
 import { Avatar, CopyLinkButton, IconButton, TabButton } from './Primitives'
 import { useLocalStorage } from '../hooks/useLocalStorage'
 import { CloudinaryMediaStorage } from '../services/media'
-import DiscordIdentity from './DiscordIdentity'
+import DiscordIdentity, { signOutDiscord, type DiscordUser } from './DiscordIdentity'
 import AnnotationLayer from './AnnotationLayer'
 import { showPrompt, showToast } from './Popups'
+import { getOwnerToken } from '../services/api'
+import { getCollaborationSettings, saveCollaborationSettings, type AccessMode, type CollaborationSettings } from '../services/collaboration'
 
 export default function CenterPanel() {
   const [tab, setTab] = useState<'notes' | 'resources'>('notes')
   const [tag, setTag] = useState('')
+  const [addingTag, setAddingTag] = useState(false)
   const [tags, setTags] = useLocalStorage('fieldnotes:tags', ['design research', 'attention', 'interfaces'])
   const [saved, setSaved] = useState(true)
-  const [sharing, setSharing] = useState(false)
+  const [identity, setIdentity] = useState<DiscordUser | null>(null)
+  const [canModerate, setCanModerate] = useState(false)
+  const [canUseCanvas, setCanUseCanvas] = useState(false)
+  const [accountMenu, setAccountMenu] = useState(false)
+  const [collaborationDialog, setCollaborationDialog] = useState<'settings' | 'invite' | null>(null)
+  const [collaboration, setCollaboration] = useState<CollaborationSettings>(getCollaborationSettings)
+  const [invitePermissions, setInvitePermissions] = useState({ canvas: true, llm: true, chat: true })
+  const [creatingInvite, setCreatingInvite] = useState(false)
   const centerRef = useRef<HTMLElement>(null)
   const [activeCanvas, setActiveCanvas] = useState<Canvas>(() => {
     const stored = localStorage.getItem('fieldnotes:active-canvas')
@@ -25,48 +35,84 @@ export default function CenterPanel() {
     if (target.startsWith('res-') || target.startsWith('comment-')) setTab('resources')
     requestAnimationFrame(() => document.getElementById(target)?.scrollIntoView({ behavior: 'smooth', block: 'center' }))
   }, [])
-  const share = async () => {
-    if (sharing) return
-    setSharing(true)
+  const savePermissions = async () => {
+    saveCollaborationSettings(collaboration)
     try {
-      const snapshot: Record<string, string> = {}
-      for (let index = 0; index < localStorage.length; index++) {
-        const key = localStorage.key(index)
-        if (key?.startsWith('fieldnotes:') && key !== 'fieldnotes:device-id' && key !== 'fieldnotes:owner-token') snapshot[key] = localStorage.getItem(key) ?? ''
-      }
-      const response = await fetch('/api/shares', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ snapshot }) })
+      const response = await fetch(`/api/canvases/${encodeURIComponent(activeCanvas.id)}/settings`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json', 'x-fieldnotes-owner-token': getOwnerToken() },
+        body: JSON.stringify({ settings: { locked: collaboration.chat === 'readonly', loginOnly: collaboration.chat === 'login', canvasMode: collaboration.canvas, llmMode: collaboration.llm } }),
+      })
+      if (!response.ok) throw new Error('Chat settings could not be saved')
+      setCollaborationDialog(null)
+      showToast('Permissions saved')
+    } catch (reason) { showToast('Could not save settings', reason instanceof Error ? reason.message : 'Try again') }
+  }
+  const createPermissionInvite = async () => {
+    if (creatingInvite) return
+    setCreatingInvite(true)
+    try {
+      const response = await fetch(`/api/canvases/${encodeURIComponent(activeCanvas.id)}/invites`, {
+        method: 'POST', headers: { 'content-type': 'application/json', 'x-fieldnotes-owner-token': getOwnerToken() },
+        body: JSON.stringify({ permissions: invitePermissions }),
+      })
       const result = await response.json() as { token?: string; error?: string }
-      if (!response.ok || !result.token) throw new Error(result.error ?? 'Could not create share link')
-      const link = new URL(window.location.href)
-      link.search = `?share=${result.token}`
-      link.hash = ''
-      await navigator.clipboard.writeText(link.toString())
-      showToast('Link copied', 'Private view link copied to your clipboard.')
-    } catch (reason) { showToast('Could not create share link', reason instanceof Error ? reason.message : 'Try again') }
-    finally { setSharing(false) }
+      if (!response.ok || !result.token) throw new Error(result.error ?? 'Could not create invite')
+      const url = new URL(window.location.href)
+      url.searchParams.set('canvas', activeCanvas.id); url.searchParams.set('invite', result.token)
+      await navigator.clipboard.writeText(url.toString())
+      setCollaborationDialog(null)
+      showToast('Invite link copied')
+    } catch (reason) { showToast('Could not create invite', reason instanceof Error ? reason.message : 'Try again') }
+    finally { setCreatingInvite(false) }
   }
   useEffect(() => {
     const select = (event: Event) => setActiveCanvas((event as CustomEvent<Canvas>).detail)
+    const moderation = (event: Event) => setCanModerate(Boolean((event as CustomEvent<boolean>).detail))
+    const access = (event: Event) => setCanUseCanvas(Boolean((event as CustomEvent<{ canvas: boolean }>).detail.canvas))
+    const openPermissions = (event: Event) => {
+      const dialog = (event as CustomEvent<'settings' | 'invite'>).detail
+      if (dialog === 'settings') setCollaboration(getCollaborationSettings())
+      setCollaborationDialog(dialog)
+    }
     window.addEventListener('fieldnotes:canvas-selected', select)
-    return () => window.removeEventListener('fieldnotes:canvas-selected', select)
+    window.addEventListener('fieldnotes:moderation-changed', moderation)
+    window.addEventListener('fieldnotes:access-changed', access)
+    window.addEventListener('fieldnotes:open-permissions', openPermissions)
+    return () => { window.removeEventListener('fieldnotes:canvas-selected', select); window.removeEventListener('fieldnotes:moderation-changed', moderation); window.removeEventListener('fieldnotes:access-changed', access); window.removeEventListener('fieldnotes:open-permissions', openPermissions) }
   }, [])
 
   return <main ref={centerRef} className="center-panel" id="top">
     <header className="canvas-header">
       <div className="breadcrumbs"><span>Research</span><span>/</span><strong>{activeCanvas.title}</strong><ChevronDown size={14} /></div>
-      <div className="header-actions"><DiscordIdentity compact/><span className="saved-state"><Check size={13} /> {saved ? 'Saved' : 'Saving…'}</span><button className="share-button" disabled={sharing} onClick={() => void share()}>{sharing ? 'Sharing…' : 'Share'} <ArrowUpRight size={15} /></button><IconButton label="More canvas options"><MoreHorizontal size={18} /></IconButton></div>
+      <div className="header-actions"><span className="saved-state"><Check size={13} /> {saved ? 'Saved' : 'Saving…'}</span><div className="account-actions"><DiscordIdentity compact onChange={setIdentity}/>{(identity || canModerate) && <IconButton label="Account and canvas options" onClick={() => setAccountMenu((open) => !open)}><MoreHorizontal size={18} /></IconButton>}{accountMenu && <div className="account-menu">
+        {canModerate && <button onClick={() => { setCollaborationDialog('invite'); setAccountMenu(false) }}><UserPlus size={14}/> Create invite link</button>}
+        {canModerate && <button onClick={() => { setCollaboration(getCollaborationSettings()); setCollaborationDialog('settings'); setAccountMenu(false) }}><Settings size={14}/> Permissions</button>}
+        {identity && <button className="danger" onClick={() => { setAccountMenu(false); void signOutDiscord() }}><LogOut size={14}/> Logout</button>}
+      </div>}</div></div>
     </header>
+
+    {collaborationDialog && <div className="collaboration-backdrop" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) setCollaborationDialog(null) }}><section className="collaboration-dialog" role="dialog" aria-modal="true" aria-label={collaborationDialog === 'invite' ? 'Create invite link' : 'Permissions'}>
+      <div className="collaboration-dialog-head"><div><span className="eyebrow">Permissions</span><h2>{collaborationDialog === 'invite' ? 'Create invite link' : 'Permissions'}</h2></div><IconButton label="Close" onClick={() => setCollaborationDialog(null)}><X size={16}/></IconButton></div>
+      {collaborationDialog === 'settings' ? <div className="permission-list">
+        <PermissionSelect label="Canvas" description="Notes, annotations, and resources" value={collaboration.canvas} onChange={(canvas) => setCollaboration({ ...collaboration, canvas })}/>
+        <PermissionSelect label="LLM chat" description="Ask questions and suggest saved answers" value={collaboration.llm} onChange={(llm) => setCollaboration({ ...collaboration, llm })}/>
+        <PermissionSelect label="Discord chat" description="Discussion comments and connected chat" value={collaboration.chat} onChange={(chat) => setCollaboration({ ...collaboration, chat })}/>
+      </div> : <div className="permission-list">
+        {(['canvas', 'llm', 'chat'] as const).map((key) => <label className="invite-permission" key={key}><span><strong>{key === 'llm' ? 'LLM chat' : key === 'chat' ? 'Discord chat' : 'Canvas'}</strong><small>{key === 'canvas' ? 'Suggest edits, annotations, and resources' : key === 'llm' ? 'Use the canvas LLM chat' : 'Post discussion comments and chat messages'}</small></span><input type="checkbox" checked={invitePermissions[key]} onChange={(event) => setInvitePermissions({ ...invitePermissions, [key]: event.target.checked })}/></label>)}
+      </div>}
+      <div className="collaboration-dialog-actions"><button className="secondary" onClick={() => setCollaborationDialog(null)}>Cancel</button><button onClick={() => void (collaborationDialog === 'invite' ? createPermissionInvite() : savePermissions())} disabled={creatingInvite}>{creatingInvite ? 'Creating…' : collaborationDialog === 'invite' ? 'Create and copy link' : 'Save settings'}</button></div>
+    </section></div>}
 
     <div className="document-head">
       <span className="doc-kicker">RESEARCH CANVAS · UPDATED JUST NOW</span>
       <h1>{activeCanvas.title}</h1>
       <p>Notes on interfaces that protect focus, invite curiosity, and help ideas find each other.</p>
       <div className="tag-row">
-        {tags.map((item) => <div key={item} className="tag"><span>#{item}</span><button type="button" onClick={() => setTags(tags.filter((tagItem) => tagItem !== item))} aria-label={`Remove tag ${item}`}><X size={11} /></button></div>)}
-        <form className="tag-form" onSubmit={(event) => { event.preventDefault(); if (tag.trim()) setTags([...tags, tag.trim()]); setTag('') }}>
-          <input aria-label="Add tag" placeholder="Add tag" value={tag} onChange={(event) => setTag(event.target.value)} />
-          <button type="submit" disabled={!tag.trim()}><Plus size={13} /> Add</button>
-        </form>
+        {tags.map((item) => <div key={item} className="tag"><span>#{item}</span>{canUseCanvas && <button type="button" onClick={() => setTags(tags.filter((tagItem) => tagItem !== item))} aria-label={`Remove tag ${item}`}><X size={11} /></button>}</div>)}
+        {canUseCanvas && (!addingTag ? <button className="tag-add" type="button" onClick={() => setAddingTag(true)} aria-label="Add tag"><Plus size={13}/></button> : <form className="tag-form" onSubmit={(event) => { event.preventDefault(); if (tag.trim()) setTags([...tags, tag.trim()]); setTag(''); setAddingTag(false) }}>
+          <input autoFocus aria-label="Add tag" placeholder="Tag name" value={tag} onChange={(event) => setTag(event.target.value)} onKeyDown={(event) => { if (event.key === 'Escape') { setTag(''); setAddingTag(false) } }} />
+        </form>)}
       </div>
     </div>
 
@@ -74,11 +120,15 @@ export default function CenterPanel() {
       <TabButton active={tab === 'notes'} onClick={() => setTab('notes')}>Notes</TabButton>
       <TabButton active={tab === 'resources'} onClick={() => setTab('resources')}>Resources <span className="count">4</span></TabButton>
     </div>
-    {tab === 'notes' ? <Notes key={activeCanvas.id} canvasId={activeCanvas.id} setSaved={setSaved} containerRef={centerRef} /> : <Resources />}
+    {tab === 'notes' ? <Notes key={activeCanvas.id} canvasId={activeCanvas.id} setSaved={setSaved} containerRef={centerRef} canInteract={canUseCanvas} /> : <Resources canInteract={canUseCanvas} />}
   </main>
 }
 
-function Notes({ canvasId, setSaved, containerRef }: { canvasId: string; setSaved: (value: boolean) => void; containerRef: RefObject<HTMLElement | null> }) {
+function PermissionSelect({ label, description, value, onChange }: { label: string; description: string; value: AccessMode; onChange: (value: AccessMode) => void }) {
+  return <label className="permission-select"><span><strong>{label}</strong><small>{description}</small></span><select value={value} onChange={(event) => onChange(event.target.value as AccessMode)}><option value="public">Anyone can suggest</option><option value="login">Login required</option><option value="readonly">Admin + invite only</option></select></label>
+}
+
+function Notes({ canvasId, setSaved, containerRef, canInteract }: { canvasId: string; setSaved: (value: boolean) => void; containerRef: RefObject<HTMLElement | null>; canInteract: boolean }) {
   const saveTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined)
   const editor = useRef<HTMLElement>(null)
   useEffect(() => {
@@ -92,6 +142,7 @@ function Notes({ canvasId, setSaved, containerRef }: { canvasId: string; setSave
     saveTimer.current = setTimeout(() => setSaved(true), 650)
   }
   const format = (command: string, value?: string) => {
+    if (!canInteract) return
     editor.current?.focus()
     document.execCommand(command, false, value)
     if (editor.current) {
@@ -116,7 +167,7 @@ function Notes({ canvasId, setSaved, containerRef }: { canvasId: string; setSave
     <div className="format-bar" aria-label="Markdown formatting">
       <IconButton label="Heading" onClick={() => format('formatBlock', 'h2')}><Heading2 size={16} /></IconButton><IconButton label="Bold" onClick={() => format('bold')}><Bold size={16} /></IconButton><IconButton label="Italic" onClick={() => format('italic')}><Italic size={16} /></IconButton><span className="divider"/><IconButton label="Link" onClick={addLink}><Link2 size={16} /></IconButton><IconButton label="Bullet list" onClick={() => format('insertUnorderedList')}><List size={16} /></IconButton><IconButton label="Quote" onClick={() => format('formatBlock', 'blockquote')}><Quote size={16} /></IconButton><IconButton label="Code" onClick={() => format('formatBlock', 'pre')}><Code2 size={16} /></IconButton><div className="format-spacer"/><span className="markdown-label">Markdown</span>
     </div>
-    <article ref={editor} className="note-editor" contentEditable suppressContentEditableWarning onInput={change} aria-label="Markdown notes">
+    <article ref={editor} className="note-editor" contentEditable={canInteract} suppressContentEditableWarning onInput={change} aria-label="Markdown notes" aria-readonly={!canInteract}>
       <h2>Attention is not a resource to extract</h2>
       <p>Most software treats attention as something to capture. A better frame might be to see it as a living material—finite, rhythmic, and shaped by context.</p>
       <p>The question changes from <em>“how do we keep someone here?”</em> to <mark id="annotation-1" onClick={() => { window.location.hash = 'annotation-comment-1' }}>“what kind of attention does this moment deserve?”</mark></p>
@@ -128,13 +179,13 @@ function Notes({ canvasId, setSaved, containerRef }: { canvasId: string; setSave
       <p>The best systems support a loop: notice, explore, make, step away, return. <mark id="annotation-2" onClick={() => { window.location.hash = 'annotation-comment-2' }}>The return is as important as the capture.</mark></p>
       <p className="empty-paragraph">Continue writing, or type “/” for commands…</p>
     </article>
-    <AnnotationLayer editorRef={editor} containerRef={containerRef} canvasId={canvasId} onDocumentChange={() => {
+    <AnnotationLayer editorRef={editor} containerRef={containerRef} canvasId={canvasId} canInteract={canInteract} onDocumentChange={() => {
       if (editor.current) localStorage.setItem(`fieldnotes:notes-html:${canvasId}`, editor.current.innerHTML)
     }}/>
   </div>
 }
 
-function Resources() {
+function Resources({ canInteract }: { canInteract: boolean }) {
   const [url, setUrl] = useState('')
   const [added, setAdded] = useLocalStorage('fieldnotes:resources', resources)
   const [uploading, setUploading] = useState('')
@@ -181,12 +232,12 @@ function Resources() {
     finally { setAddingLink(false) }
   }
   return <div className="resources-view">
-    <section className="add-resource">
+    {canInteract && <section className="add-resource">
       <div className="drop-zone" onClick={() => fileInput.current?.click()} onDragOver={(event) => event.preventDefault()} onDrop={(event) => { event.preventDefault(); void uploadFiles(event.dataTransfer.files) }}><input ref={fileInput} type="file" multiple hidden onChange={(event) => void uploadFiles(event.target.files)} /><span className="upload-icon"><Upload size={19} /></span><div><strong>{uploading || 'Drop files here or choose files'}</strong><small>PDF, image, video, audio · up to 500 MB</small></div></div>
       {error && <p role="alert" className="mt-2 text-xs text-red-700">{error}</p>}
       <div className="or"><span />or add from a link<span /></div>
       <form className="url-input" onSubmit={(event) => { event.preventDefault(); void addLink() }}><Link2 size={17} /><input type="url" required placeholder="Paste an article, video, post, or any URL" value={url} onChange={(event) => setUrl(event.target.value)} /><button disabled={addingLink}>{addingLink ? 'Reading…' : 'Add'}</button></form>
-    </section>
+    </section>}
     <section className="resource-list"><div className="section-title"><h2>Resources <span>{added.length}</span></h2><button>Recently added <ChevronDown size={14} /></button></div>
       {added.map((resource) => <article className="resource-card deep-link-target" id={resource.id} key={resource.id}>
         <div className="resource-thumb" style={{ '--resource-accent': resource.accent } as React.CSSProperties}>{resource.kind === 'video' ? <Video /> : resource.kind === 'pdf' ? <FileText /> : resource.kind === 'chat' ? <MessageCircle /> : <File />}</div>
@@ -194,14 +245,23 @@ function Resources() {
         <div className="resource-actions"><CopyLinkButton target={resource.id} /><IconButton label="Resource options"><MoreHorizontal size={18}/></IconButton></div>
       </article>)}
     </section>
-    <Comments />
+    <Comments canInteract={canInteract} />
   </div>
 }
 
-function Comments() {
+function Comments({ canInteract }: { canInteract: boolean }) {
   const [text, setText] = useState('')
   const [items, setItems] = useLocalStorage('fieldnotes:comments', comments)
-  const add = () => { if (!text.trim()) return; setItems([...items, { id: `comment-${Date.now()}`, author: 'You', initials: 'YO', time: 'Now', body: text }]); setText('') }
+  const [identity, setIdentity] = useState<{ id: string; displayName: string; avatar?: string } | null>(null)
+  useEffect(() => {
+    void fetch('/api/discord/me').then((response) => response.ok ? response.json() : null).then((result: { user?: { id: string; displayName: string; avatar?: string } } | null) => setIdentity(result?.user ?? null)).catch(() => {})
+    const sync = (event: Event) => setIdentity((event as CustomEvent<{ id: string; displayName: string; avatar?: string } | null>).detail)
+    window.addEventListener('fieldnotes:discord-auth-synced', sync)
+    return () => window.removeEventListener('fieldnotes:discord-auth-synced', sync)
+  }, [])
+  const currentAuthor = identity?.displayName ?? 'You'
+  const currentInitials = currentAuthor.split(/\s+/).map((part) => part[0]).join('').slice(0, 2).toUpperCase() || 'YO'
+  const add = () => { if (!text.trim()) return; setItems([...items, { id: `comment-${crypto.randomUUID()}`, author: currentAuthor, authorId: identity?.id, avatar: identity?.avatar, initials: currentInitials, time: 'Now', body: text.trim() }]); setText('') }
   const saveAsResource = (comment: Comment) => {
     const key = 'fieldnotes:resources'
     const current = JSON.parse(localStorage.getItem(key) ?? JSON.stringify(resources)) as unknown[]
@@ -220,15 +280,19 @@ function Comments() {
     void (async () => {
       const body = await showPrompt({ title: 'Reply', message: 'Write a reply.', placeholder: 'Reply…', confirmLabel: 'Reply' })
       if (!body) return
-      const nested = { id: `reply-${crypto.randomUUID()}`, author: 'You', initials: 'YO', time: 'Now', body: body.trim() }
+      const nested = { id: `reply-${crypto.randomUUID()}`, author: currentAuthor, authorId: identity?.id, avatar: identity?.avatar, initials: currentInitials, time: 'Now', body: body.trim() }
       setItems(items.map((item) => item.id === id ? { ...item, replies: [...(item.replies ?? []), nested] } : item))
     })()
   }
+  const remove = (id: string) => setItems(items.flatMap((item) => item.id === id ? [] : [{ ...item, replies: item.replies?.filter((replyItem) => replyItem.id !== id) }]))
   return <section className="comments-section"><div className="section-title"><h2>Discussion <span>{items.length}</span></h2></div>
-    <div className="comment-compose"><Avatar initials="YO" color="ink"/><div><textarea value={text} onChange={(event) => setText(event.target.value)} onKeyDown={handleKeyDown} placeholder="Add to the discussion…"/><button onClick={add} disabled={!text.trim()}><Send size={14}/> Comment</button></div></div>
-    {items.map((comment) => <CommentItem key={comment.id} comment={comment} onReply={reply} onSave={saveAsResource}/>)}</section>
+    {canInteract && <div className="comment-compose"><Avatar initials={currentInitials} src={identity?.avatar} name={currentAuthor} color="ink"/><div><textarea value={text} onChange={(event) => setText(event.target.value)} onKeyDown={handleKeyDown} placeholder="Add to the discussion…"/><button onClick={add} disabled={!text.trim()}><Send size={14}/> Comment</button></div></div>}
+    {items.map((comment) => <CommentItem key={comment.id} comment={comment} currentUserId={identity?.id} currentName={currentAuthor} currentAvatar={identity?.avatar} canInteract={canInteract} onReply={reply} onSave={saveAsResource} onDelete={remove}/>)}</section>
 }
 
-function CommentItem({ comment, onReply, onSave }: { comment: Comment; onReply: (id: string) => void; onSave: (comment: Comment) => void }) {
-  return <article className="comment deep-link-target" id={comment.id}><Avatar initials={comment.initials} color="clay"/><div className="comment-body"><div><strong>{comment.author}</strong><time>{comment.time}</time></div><p>{comment.body}</p><div className="comment-actions"><button onClick={() => onReply(comment.id)}><Reply size={13}/> Reply</button><button onClick={() => onSave(comment)}><FileText size={13} /> Save as resource</button><CopyLinkButton target={comment.id}/></div>{comment.replies?.map((reply) => <CommentItem key={reply.id} comment={reply} onReply={onReply} onSave={onSave}/>)}</div></article>
+function CommentItem({ comment, currentUserId, currentName, currentAvatar, canInteract, onReply, onSave, onDelete }: { comment: Comment; currentUserId?: string; currentName: string; currentAvatar?: string; canInteract: boolean; onReply: (id: string) => void; onSave: (comment: Comment) => void; onDelete: (id: string) => void }) {
+  const mine = comment.author === 'You' || Boolean(currentUserId && comment.authorId === currentUserId)
+  const shownName = mine && comment.author === 'You' && currentUserId ? currentName : comment.author
+  const shownAvatar = mine && comment.author === 'You' ? currentAvatar : comment.avatar
+  return <article className="comment deep-link-target" id={comment.id}><Avatar initials={comment.initials} src={shownAvatar} name={shownName} color={mine ? 'ink' : 'clay'}/><div className="comment-body"><div><strong>{shownName}</strong><time>{comment.time}</time></div><p>{comment.body}</p><div className="comment-actions">{canInteract && <button onClick={() => onReply(comment.id)}><Reply size={13}/> Reply</button>}{canInteract && <button onClick={() => onSave(comment)}><FileText size={13} /> Save as resource</button>}<CopyLinkButton target={comment.id}/>{canInteract && mine && <button className="text-red-700" onClick={() => onDelete(comment.id)}><Trash2 size={13}/> Delete</button>}</div>{comment.replies?.map((reply) => <CommentItem key={reply.id} comment={reply} currentUserId={currentUserId} currentName={currentName} currentAvatar={currentAvatar} canInteract={canInteract} onReply={onReply} onSave={onSave} onDelete={onDelete}/>)}</div></article>
 }

@@ -22,6 +22,7 @@ export function setGuestName(name: string) {
 }
 
 export function getOwnerToken() {
+  if (localStorage.getItem('fieldnotes:owner-signed-out') === 'true') return ''
   const key = 'fieldnotes:owner-token'
   let token = localStorage.getItem(key)
   if (!token) {
@@ -37,8 +38,8 @@ export async function completeChat(messages: ChatMessage[], signal?: AbortSignal
   const canvasContext = `${active.title}\n\n${noteHtml.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').slice(0, 20_000)}`
   const response = await fetch('/api/chat', {
     method: 'POST',
-    headers: { 'content-type': 'application/json', 'x-fieldnotes-device': getDeviceId() },
-    body: JSON.stringify({ messages: messages.map(({ role, content }) => ({ role, content })), canvasContext }),
+    headers: { 'content-type': 'application/json', 'x-fieldnotes-device': getDeviceId(), 'x-fieldnotes-owner-token': getOwnerToken(), 'x-fieldnotes-invite-token': localStorage.getItem('fieldnotes:invite-token:' + active.id) ?? '' },
+    body: JSON.stringify({ messages: messages.map(({ role, content }) => ({ role, content })), canvasContext, canvasId: active.id }),
     signal,
   })
   const data = await response.json() as { content?: string; error?: string }

@@ -211,6 +211,7 @@ async function canvasChat(request: Request, env: Env, canvasId: string, action: 
     const headers = new Headers(request.headers)
     headers.set('x-fieldnotes-author-name', encodeURIComponent(identity.authorName))
     headers.set('x-fieldnotes-author-id', identity.authorId)
+    if (identity.authorAvatar) headers.set('x-fieldnotes-author-avatar', identity.authorAvatar)
     headers.set('x-fieldnotes-guest', String(identity.authorId.startsWith('guest:')))
     return room.fetch(new Request(request, { headers }))
   }
@@ -224,10 +225,14 @@ async function canvasChat(request: Request, env: Env, canvasId: string, action: 
       room.getDiscordChannel(),
       websiteIdentity(request, env, actor),
       room.getSettings(),
-      room.verifyInvite(inviteToken),
+      room.verifyInvitePermission(inviteToken, 'chat'),
       ownerToken ? room.claimOwnerToken(ownerToken) : Promise.resolve(false)
     ])
     let discord = storedDiscord
+    const [canCanvas, canLlm] = await Promise.all([
+      room.canUse('canvas', identity.authorId, ownerToken, inviteToken),
+      room.canUse('llm', identity.authorId, ownerToken, inviteToken),
+    ])
     if (discord && !discord.channelName) {
       try {
         const response = await discordFetch(env, '/channels/' + discord.channelId)
@@ -238,7 +243,7 @@ async function canvasChat(request: Request, env: Env, canvasId: string, action: 
         }
       } catch { /* Ignore name lookup failures. */ }
     }
-    return json({ messages, discord, canModerate, settings, isInviteValid })
+    return json({ messages, discord, canModerate, settings, isInviteValid, access: { canvas: canCanvas, llm: canLlm } })
   }
   if (request.method !== 'POST') return json({ error: 'Method not allowed' }, 405)
   const identity = await websiteIdentity(request, env, actor)
@@ -327,12 +332,14 @@ async function canvasSettings(request: Request, env: Env, canvasId: string) {
   if (!ownerToken || !(await room.claimOwnerToken(ownerToken))) {
     return json({ error: 'Only the page owner can update settings' }, 403)
   }
-  const body = await readJson<{ settings?: Partial<{ locked: boolean; loginOnly: boolean }> }>(request)
+  const body = await readJson<{ settings?: Partial<{ locked: boolean; loginOnly: boolean; canvasMode: 'public' | 'login' | 'readonly'; llmMode: 'public' | 'login' | 'readonly' }> }>(request)
   if (!body.settings) return json({ error: 'Missing settings' }, 400)
   const current = await room.getSettings()
   const next = {
     locked: typeof body.settings.locked === 'boolean' ? body.settings.locked : current.locked,
     loginOnly: typeof body.settings.loginOnly === 'boolean' ? body.settings.loginOnly : current.loginOnly,
+    canvasMode: ['public', 'login', 'readonly'].includes(body.settings.canvasMode ?? '') ? body.settings.canvasMode! : current.canvasMode,
+    llmMode: ['public', 'login', 'readonly'].includes(body.settings.llmMode ?? '') ? body.settings.llmMode! : current.llmMode,
   }
   await room.setSettings(next)
   return json({ settings: next })
@@ -345,7 +352,9 @@ async function canvasInvites(request: Request, env: Env, canvasId: string) {
   if (!ownerToken || !(await room.claimOwnerToken(ownerToken))) {
     return json({ error: 'Only the page owner can create invite links' }, 403)
   }
-  const token = await room.createInvite()
+  const body = await readJson<{ permissions?: Record<string, boolean> }>(request)
+  const permissions = Object.fromEntries(Object.entries(body.permissions ?? {}).filter(([key, value]) => ['canvas', 'llm', 'chat'].includes(key) && typeof value === 'boolean'))
+  const token = await room.createInvite(permissions)
   return json({ token })
 }
 
@@ -632,7 +641,13 @@ async function chat(request: Request, env: Env, actor: string) {
   if (!env.OPENROUTER_API_KEY) return json({ error: 'OpenRouter is not configured. Add OPENROUTER_API_KEY to .dev.vars.' }, 503)
   const aiLimit = await env.AI_RATE_LIMITER.limit({ key: actor })
   if (!aiLimit.success) return json({ error: 'Chat rate limit reached. Try again in a minute.' }, 429)
-  const body = await readJson<{ messages?: IncomingMessage[]; canvasContext?: string }>(request)
+  const body = await readJson<{ messages?: IncomingMessage[]; canvasContext?: string; canvasId?: string }>(request)
+  if (body.canvasId && /^[a-zA-Z0-9_-]{1,100}$/.test(body.canvasId)) {
+    const identity = await websiteIdentity(request, env, actor)
+    const ownerToken = request.headers.get('x-fieldnotes-owner-token')?.slice(0, 128) ?? ''
+    const inviteToken = request.headers.get('x-fieldnotes-invite-token')?.slice(0, 128) ?? ''
+    if (!await env.CANVAS_ROOMS.getByName(body.canvasId).canUse('llm', identity.authorId, ownerToken, inviteToken)) return json({ error: 'You do not have permission to use this canvas chat.' }, 403)
+  }
   const messages = body.messages
   if (!Array.isArray(messages) || messages.length < 1 || messages.length > 30) return json({ error: 'Provide between 1 and 30 messages' }, 400)
   let total = 0

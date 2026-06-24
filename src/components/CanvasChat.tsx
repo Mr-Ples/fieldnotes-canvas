@@ -1,6 +1,6 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState, type MouseEvent as ReactMouseEvent } from 'react'
 import { createPortal } from 'react-dom'
-import { BookmarkPlus, Check, ExternalLink, Forward, Link2, Lock, MessageCircleReply, MoreHorizontal, Paperclip, RefreshCw, Send, Smile, SmilePlus, Trash2, Unplug, UserCheck, UserPlus } from 'lucide-react'
+import { BookmarkPlus, Check, ExternalLink, Forward, Link2, Lock, MessageCircleReply, MoreHorizontal, Paperclip, RefreshCw, Send, Settings, Smile, SmilePlus, Trash2, Unplug, UserCheck, UserPlus } from 'lucide-react'
 import { Virtuoso, type VirtuosoHandle } from 'react-virtuoso'
 import { getDeviceId, getGuestName, getOwnerToken, setGuestName as saveGuestName } from '../services/api'
 import DiscordConnectModal from './DiscordConnectModal'
@@ -54,11 +54,11 @@ export default function CanvasChat() {
   const [connectOpen, setConnectOpen] = useState(() => new URL(window.location.href).searchParams.has('discordConnect'))
   const [headerMenu, setHeaderMenu] = useState<{ top: number; left: number }>()
   const [reactionHover, setReactionHover] = useState<{ messageId: string; emoji: string; participants: string[]; top: number; left: number }>()
+  const [online, setOnline] = useState<Array<{ id: string; name: string; avatar?: string }>>([])
   
   // Custom chat settings states
   const [settings, setSettings] = useState<{ locked: boolean; loginOnly: boolean }>({ locked: false, loginOnly: false })
   const [isInviteValid, setIsInviteValid] = useState(false)
-  const [inviteState, setInviteState] = useState<'idle' | 'creating' | 'copied'>('idle')
 
   const list = useRef<VirtuosoHandle>(null)
   const linkedMessageHandled = useRef(false)
@@ -69,8 +69,21 @@ export default function CanvasChat() {
   const popoverRef = useRef<HTMLDivElement>(null)
   const headerMenuRef = useRef<HTMLDivElement>(null)
   const storage = useRef(new CloudinaryMediaStorage())
-  const ownerToken = useState(getOwnerToken)[0]
+  const [ownerToken, setOwnerToken] = useState(getOwnerToken)
   const byId = useMemo(() => new Map(messages.map((message) => [message.id, message])), [messages])
+
+  useEffect(() => {
+    const syncOwner = () => {
+      const token = getOwnerToken()
+      setOwnerToken(token)
+      if (!token) {
+        setCanModerate(false)
+        window.dispatchEvent(new CustomEvent('fieldnotes:moderation-changed', { detail: false }))
+      }
+    }
+    window.addEventListener('fieldnotes:owner-session-changed', syncOwner)
+    return () => window.removeEventListener('fieldnotes:owner-session-changed', syncOwner)
+  }, [])
 
   const [inviteToken, setInviteToken] = useState(() => {
     const url = new URL(window.location.href)
@@ -98,48 +111,6 @@ export default function CanvasChat() {
     if (settings.loginOnly && !identity) return false
     return true
   }, [canModerate, isInviteValid, settings.locked, settings.loginOnly, identity])
-
-  const updateSettings = async (nextSettings: typeof settings) => {
-    try {
-      const response = await fetch(`/api/canvases/${encodeURIComponent(canvas.id)}/settings`, {
-        method: 'POST',
-        headers: {
-          'content-type': 'application/json',
-          'x-fieldnotes-owner-token': ownerToken,
-        },
-        body: JSON.stringify({ settings: nextSettings }),
-      })
-      const result = await response.json() as { settings?: typeof settings; error?: string }
-      if (!response.ok || !result.settings) throw new Error(result.error ?? 'Could not update settings')
-      setSettings(result.settings)
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Could not update settings')
-    }
-  }
-
-  const createInviteLink = async () => {
-    setInviteState('creating')
-    try {
-      const response = await fetch(`/api/canvases/${encodeURIComponent(canvas.id)}/invites`, {
-        method: 'POST',
-        headers: {
-          'x-fieldnotes-owner-token': ownerToken,
-        },
-      })
-      const result = await response.json() as { token?: string; error?: string }
-      if (!response.ok || !result.token) throw new Error(result.error ?? 'Could not create invite')
-
-      const url = new URL(window.location.href)
-      url.searchParams.set('canvas', canvas.id)
-      url.searchParams.set('invite', result.token)
-      await navigator.clipboard.writeText(url.toString())
-      setInviteState('copied')
-      setTimeout(() => setInviteState('idle'), 2000)
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Could not create invite')
-      setInviteState('idle')
-    }
-  }
 
   useEffect(() => {
     const select = (event: Event) => setCanvas((event as CustomEvent<{ id: string; title: string }>).detail)
@@ -170,7 +141,7 @@ export default function CanvasChat() {
       socket.onopen = () => { attempts = 0; setConnected(true) }
       socket.onmessage = (event) => {
         if (event.data === 'pong') return
-        const payload = JSON.parse(event.data) as { type: string; message?: Message; messages?: Message[]; messageId?: string; userId?: string; authorName?: string; settings?: { locked: boolean; loginOnly: boolean } }
+        const payload = JSON.parse(event.data) as { type: string; message?: Message; messages?: Message[]; messageId?: string; userId?: string; authorName?: string; settings?: { locked: boolean; loginOnly: boolean }; participants?: Array<{ id: string; name: string; avatar?: string }> }
         if (payload.messages) merge(payload.messages)
         if (payload.message?.deleted) setMessages((current) => current.filter((message) => message.id !== payload.message!.id))
         else if (payload.message) merge([payload.message])
@@ -181,6 +152,7 @@ export default function CanvasChat() {
         if (payload.type === 'settings' && payload.settings) {
           setSettings(payload.settings)
         }
+        if (payload.type === 'presence' && payload.participants) setOnline(payload.participants)
       }
       socket.onclose = () => {
         setConnected(false)
@@ -202,9 +174,12 @@ export default function CanvasChat() {
         canModerate?: boolean;
         settings?: { locked: boolean; loginOnly: boolean };
         isInviteValid?: boolean;
+        access?: { canvas: boolean; llm: boolean };
       }
       if (!disposed) {
         merge(result.messages); setCanModerate(Boolean(result.canModerate))
+        window.dispatchEvent(new CustomEvent('fieldnotes:moderation-changed', { detail: Boolean(result.canModerate) }))
+        if (result.access) window.dispatchEvent(new CustomEvent('fieldnotes:access-changed', { detail: result.access }))
         setDiscordLinked(Boolean(result.discord)); setDiscordInvite(result.discord?.inviteUrl ?? ''); setDiscordChannelName(result.discord?.channelName ?? '')
         if (result.settings) setSettings(result.settings)
         if (result.isInviteValid !== undefined) {
@@ -230,7 +205,7 @@ export default function CanvasChat() {
     }).catch((reason) => { if (!disposed) { setLinkReady(true); setError(reason instanceof Error ? reason.message : 'Could not load chat') } })
     connect()
     return () => { disposed = true; clearTimeout(retry); socket?.close(); socketRef.current = undefined }
-  }, [canvas.id])
+  }, [canvas.id, ownerToken])
 
   useEffect(() => {
     const timer = setInterval(() => setTypers((current) => {
@@ -472,8 +447,9 @@ export default function CanvasChat() {
       <div className="flex items-start justify-between gap-2">
         <div className="min-w-0">
           <div className="truncate text-[11px] font-semibold">{discordChannelName ? `#${discordChannelName}` : canvas.title}</div>
-          <div className={`mt-0.5 flex items-center gap-1 text-[8px] ${connected ? 'text-emerald-700' : 'text-stone-400'}`}>{connected ? <Check size={10} /> : <RefreshCw size={10} />} {connected ? 'Live' : 'Connecting'}{discordLinked && <span>· Discord linked</span>}{saveState !== 'idle' && <span>· {saveState === 'saving' ? 'Saving…' : saveState === 'saved' ? 'Saved to resources' : 'Save failed'}</span>}</div>
+          <div className={`mt-0.5 flex items-center gap-1 text-[8px] ${connected ? 'text-emerald-700' : 'text-stone-400'}`}>{connected ? <Check size={10} /> : <RefreshCw size={10} />} {connected ? 'Live' : 'Connecting'}{online.length > 0 && <span title={online.map((person) => person.name).join(', ')}>· {online.length} online</span>}{discordLinked && <span>· Discord linked</span>}{saveState !== 'idle' && <span>· {saveState === 'saving' ? 'Saving…' : saveState === 'saved' ? 'Saved to resources' : 'Save failed'}</span>}</div>
         </div>
+        <div className="ml-auto flex -space-x-1" aria-label={`${online.length} people online`}>{online.slice(0, 3).map((person) => person.avatar ? <img key={person.id} className="size-6 rounded-full border-2 border-paper object-cover" src={person.avatar} alt={person.name} title={`${person.name} · online`}/> : <span key={person.id} className="grid size-6 place-items-center rounded-full border-2 border-paper bg-emerald-100 text-[7px] font-bold text-emerald-900" title={`${person.name} · online`}>{person.name.slice(0, 2).toUpperCase()}</span>)}</div>
         <button className="grid size-7 place-items-center rounded-md border border-stone-200 bg-white text-stone-500 hover:bg-stone-50" aria-label="More channel options" onClick={(event) => {
           const rect = event.currentTarget.getBoundingClientRect()
           const width = 224
@@ -566,17 +542,8 @@ export default function CanvasChat() {
       {!discordInvite && discordAuthorization && <a className="flex w-full items-center gap-2 rounded border-0 bg-transparent px-2 py-2 text-left hover:bg-stone-100" href={discordAuthorization} target="_blank" rel="noreferrer" onClick={() => setHeaderMenu(undefined)}>Join Discord server <ExternalLink size={13} /></a>}
       {canModerate && <>
         <div className="mx-2 my-1 border-t border-stone-100" />
-        <button className="flex w-full items-center justify-between rounded border-0 bg-transparent px-2 py-2 text-left hover:bg-stone-100" onClick={() => { void updateSettings({ ...settings, locked: !settings.locked }); setHeaderMenu(undefined) }}>
-          <span className="flex items-center gap-2"><Lock size={13} /> Lock chat</span>
-          <span className={`rounded px-1 py-0.5 text-[8px] font-semibold ${settings.locked ? 'bg-amber-100 text-amber-700' : 'bg-stone-100 text-stone-400'}`}>{settings.locked ? 'On' : 'Off'}</span>
-        </button>
-        <button className="flex w-full items-center justify-between rounded border-0 bg-transparent px-2 py-2 text-left hover:bg-stone-100" onClick={() => { void updateSettings({ ...settings, loginOnly: !settings.loginOnly }); setHeaderMenu(undefined) }}>
-          <span className="flex items-center gap-2"><UserCheck size={13} /> Login only</span>
-          <span className={`rounded px-1 py-0.5 text-[8px] font-semibold ${settings.loginOnly ? 'bg-indigo-100 text-indigo-700' : 'bg-stone-100 text-stone-400'}`}>{settings.loginOnly ? 'On' : 'Off'}</span>
-        </button>
-        <button className="flex w-full items-center gap-2 rounded border-0 bg-transparent px-2 py-2 text-left hover:bg-stone-100" onClick={() => { void createInviteLink(); setHeaderMenu(undefined) }} disabled={inviteState === 'creating'}>
-          <UserPlus size={13} /> {inviteState === 'copied' ? 'Link copied!' : inviteState === 'creating' ? 'Creating…' : 'Create invite link'}
-        </button>
+        <button className="flex w-full items-center gap-2 rounded border-0 bg-transparent px-2 py-2 text-left hover:bg-stone-100" onClick={() => { window.dispatchEvent(new CustomEvent('fieldnotes:open-permissions', { detail: 'settings' })); setHeaderMenu(undefined) }}><Settings size={13}/> Permissions</button>
+        <button className="flex w-full items-center gap-2 rounded border-0 bg-transparent px-2 py-2 text-left hover:bg-stone-100" onClick={() => { window.dispatchEvent(new CustomEvent('fieldnotes:open-permissions', { detail: 'invite' })); setHeaderMenu(undefined) }}><UserPlus size={13}/> Create invite link</button>
         <div className="mx-2 my-1 border-t border-stone-100" />
         <button className="flex w-full items-center gap-2 rounded border-0 bg-transparent px-2 py-2 text-left hover:bg-stone-100" onClick={() => { void saveConversation(); setHeaderMenu(undefined) }} disabled={saveState !== 'idle'}>{saveState === 'saving' ? 'Saving…' : saveState === 'saved' ? 'Saved to resources' : saveState === 'error' ? 'Save failed' : <><BookmarkPlus size={13} /> Save conversation</>}</button>
       </>}

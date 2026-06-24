@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { LogIn, LogOut } from 'lucide-react'
 import { showConfirm, showToast } from './Popups'
+import { setOwnerSessionActive } from '../services/collaboration'
 
 export type DiscordUser = { id: string; displayName: string; username: string; avatar?: string }
 
@@ -14,6 +15,7 @@ export default function DiscordIdentity({ compact = false, onChange }: { compact
       const response = await fetch('/api/discord/me')
       const result = await response.json() as { user?: DiscordUser | null }
       const next = response.ok ? result.user ?? null : null
+      if (next) setOwnerSessionActive(true)
       setUser(next)
       onChange?.(next)
       return next
@@ -37,6 +39,7 @@ export default function DiscordIdentity({ compact = false, onChange }: { compact
       const payload = event.data as { type?: string } | null
       if (payload?.type !== 'fieldnotes:discord-auth-complete') return
       authWindow.current = null
+      setOwnerSessionActive(true)
       void refresh().then((next) => window.dispatchEvent(new CustomEvent('fieldnotes:discord-auth-synced', { detail: next ?? null })))
     }
     window.addEventListener('fieldnotes:discord-auth-synced', syncIdentity)
@@ -54,26 +57,27 @@ export default function DiscordIdentity({ compact = false, onChange }: { compact
     opened.focus()
   }
 
-  const signOut = async () => {
-    if (!await showConfirm({
-      title: 'Sign out of Discord?',
-      message: 'You will need to connect Discord again before posting as your Discord identity.',
-      confirmLabel: 'Sign out',
-      cancelLabel: 'Keep me signed in',
-      tone: 'danger',
-    })) return
-    await fetch('/api/discord/logout', { method: 'POST' })
-    setUser(null)
-    onChange?.(null)
-    window.dispatchEvent(new CustomEvent('fieldnotes:discord-auth-synced', { detail: null }))
-    showToast('Signed out')
-  }
+  const signOut = () => signOutDiscord()
 
   if (loading) return compact ? null : <span className="text-[9px] text-stone-400">Checking identity…</span>
   if (!user) return <button className="discord-signin" onClick={signIn}><LogIn size={13}/> Sign in with Discord</button>
   return <div className={`discord-identity ${compact ? 'is-compact' : ''}`}>
     {user.avatar ? <img src={user.avatar} alt=""/> : <span>{user.displayName.slice(0, 2).toUpperCase()}</span>}
     <strong>{user.displayName}</strong>
-    <button onClick={() => void signOut()} aria-label="Sign out of Discord" title="Sign out"><LogOut size={12}/></button>
+    {!compact && <button onClick={() => void signOut()} aria-label="Sign out of Discord" title="Sign out"><LogOut size={12}/></button>}
   </div>
+}
+
+export async function signOutDiscord() {
+    if (!await showConfirm({
+      title: 'Sign out of Discord?',
+      message: 'You will also stop acting as this canvas admin until you sign in again.',
+      confirmLabel: 'Sign out',
+      cancelLabel: 'Keep me signed in',
+      tone: 'danger',
+    })) return
+    await fetch('/api/discord/logout', { method: 'POST' })
+    setOwnerSessionActive(false)
+    window.dispatchEvent(new CustomEvent('fieldnotes:discord-auth-synced', { detail: null }))
+    showToast('Signed out')
 }
