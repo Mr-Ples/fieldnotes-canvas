@@ -188,6 +188,12 @@ function Comments() {
   const [text, setText] = useState('')
   const [items, setItems] = useLocalStorage('fieldnotes:comments', comments)
   const add = () => { if (!text.trim()) return; setItems([...items, { id: `comment-${Date.now()}`, author: 'You', initials: 'YO', time: 'Now', body: text }]); setText('') }
+  const handleKeyDown = (event: React.KeyboardEvent<HTMLTextAreaElement>) => {
+    if (event.key === 'Enter' && !event.shiftKey) {
+      event.preventDefault()
+      add()
+    }
+  }
   const reply = (id: string) => {
     const body = window.prompt('Write a reply')?.trim()
     if (!body) return
@@ -195,7 +201,7 @@ function Comments() {
     setItems(items.map((item) => item.id === id ? { ...item, replies: [...(item.replies ?? []), nested] } : item))
   }
   return <section className="comments-section"><div className="section-title"><h2>Discussion <span>{items.length}</span></h2></div>
-    <div className="comment-compose"><Avatar initials="YO" color="ink"/><div><textarea value={text} onChange={(event) => setText(event.target.value)} placeholder="Add to the discussion…"/><button onClick={add} disabled={!text.trim()}><Send size={14}/> Comment</button></div></div>
+    <div className="comment-compose"><Avatar initials="YO" color="ink"/><div><textarea value={text} onChange={(event) => setText(event.target.value)} onKeyDown={handleKeyDown} placeholder="Add to the discussion…"/><button onClick={add} disabled={!text.trim()}><Send size={14}/> Comment</button></div></div>
     {items.map((comment) => <CommentItem key={comment.id} comment={comment} onReply={reply}/>)}</section>
 }
 

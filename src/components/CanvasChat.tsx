@@ -1,6 +1,6 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState, type MouseEvent as ReactMouseEvent } from 'react'
 import { createPortal } from 'react-dom'
-import { BookmarkPlus, Check, ExternalLink, Forward, Link2, MessageCircleReply, MoreHorizontal, Paperclip, RefreshCw, Send, SmilePlus, Trash2, Unplug } from 'lucide-react'
+import { BookmarkPlus, Check, ExternalLink, Forward, Link2, MessageCircleReply, MoreHorizontal, Paperclip, RefreshCw, Send, Smile, SmilePlus, Trash2, Unplug } from 'lucide-react'
 import { Virtuoso, type VirtuosoHandle } from 'react-virtuoso'
 import { getDeviceId, getGuestName, getOwnerToken, setGuestName as saveGuestName } from '../services/api'
 import DiscordConnectModal from './DiscordConnectModal'
@@ -38,7 +38,7 @@ export default function CanvasChat() {
   const [uploads, setUploads] = useState<StoredMedia[]>([])
   const [uploading, setUploading] = useState(false)
   const [typers, setTypers] = useState(() => new Map<string, { name: string; expires: number }>())
-  const [popover, setPopover] = useState<{ type: 'emoji' | 'more'; message: Message; top: number; left: number }>()
+  const [popover, setPopover] = useState<{ type: 'emoji' | 'more'; message?: Message; top: number; left: number }>()
   const [linkReady, setLinkReady] = useState(() => !linkedMessageId)
   const [saveState, setSaveState] = useState<'idle' | 'saving' | 'saved' | 'error'>('idle')
   const [guestName, setGuestName] = useState(getGuestName)
@@ -213,6 +213,43 @@ export default function CanvasChat() {
     socketRef.current.send(JSON.stringify({ type: 'typing', guestName }))
   }
 
+  const insertEmoji = (emoji: string) => {
+    const textarea = composerRef.current
+    if (!textarea) {
+      setContent((prev) => prev + emoji)
+      return
+    }
+    const start = textarea.selectionStart
+    const end = textarea.selectionEnd
+    const text = textarea.value
+    const before = text.substring(0, start)
+    const after = text.substring(end, text.length)
+    const newContent = before + emoji + after
+    setContent(newContent)
+    
+    // Set focus and cursor position back after React updates state
+    setTimeout(() => {
+      textarea.focus()
+      textarea.setSelectionRange(start + emoji.length, start + emoji.length)
+    }, 0)
+  }
+
+  const toggleComposerEmoji = (event: ReactMouseEvent<HTMLButtonElement>) => {
+    const rect = event.currentTarget.getBoundingClientRect()
+    const size = { width: 288, height: 304 }
+    const left = Math.max(8, Math.min(window.innerWidth - size.width - 8, rect.left + rect.width / 2 - size.width / 2))
+    const top = Math.max(8, Math.min(window.innerHeight - size.height - 8, rect.top - size.height - 6))
+    setHeaderMenu(undefined)
+    setPopover((current) => current?.type === 'emoji' && !current.message ? undefined : { type: 'emoji', top, left })
+  }
+
+  const handleKeyDown = (event: React.KeyboardEvent<HTMLTextAreaElement>) => {
+    if (event.key === 'Enter' && !event.shiftKey) {
+      event.preventDefault()
+      void send()
+    }
+  }
+
   const react = async (message: Message, emoji: string) => {
     const key = message.id + ':' + emoji
     const active = !myReactions.has(key)
@@ -371,9 +408,9 @@ export default function CanvasChat() {
     </div>
     <form className="m-3 mt-2 rounded-lg border border-stone-300 bg-white p-2" onSubmit={(event) => { event.preventDefault(); void send() }}>
       {replyTo && <div className="-mx-2 -mt-2 mb-2 flex items-center gap-2 rounded-t-lg border-b border-stone-200 bg-stone-50 px-2 py-1.5 text-[9px]">{replyTo.authorAvatar ? <img className="size-5 rounded-full" src={replyTo.authorAvatar} alt="" /> : <span className="grid size-5 place-items-center rounded-full bg-stone-200 text-[7px]">{replyTo.authorName.slice(0, 2).toUpperCase()}</span>}<MessageCircleReply size={11} className="shrink-0 text-indigo-500" /><button type="button" className="min-w-0 flex-1 truncate border-0 bg-transparent text-left text-stone-500" onClick={() => jumpToMessage(replyTo.id)}>Replying to <strong className="text-stone-700">{replyTo.authorName}</strong> · {replyTo.content || 'Attachment'}</button><button type="button" className="grid size-5 place-items-center border-0 bg-transparent text-stone-400" onClick={() => setReplyTo(undefined)}>×</button></div>}
-      <textarea ref={composerRef} rows={1} className="w-full resize-none border-0 bg-transparent text-[11px] outline-none" style={{ overflowY: 'hidden' }} maxLength={2000} placeholder="Message this canvas and Discord…" value={content} onChange={(event) => { setContent(event.target.value); announceTyping() }} />
+      <textarea ref={composerRef} rows={1} className="w-full resize-none border-0 bg-transparent text-[11px] outline-none" style={{ overflowY: 'hidden' }} maxLength={2000} placeholder="Message this canvas and Discord…" value={content} onChange={(event) => { setContent(event.target.value); announceTyping() }} onKeyDown={handleKeyDown} />
       {uploads.length > 0 && <div className="mb-1 flex flex-wrap gap-1">{uploads.map((file) => <button type="button" className="rounded bg-stone-100 px-1.5 py-1 text-[8px]" key={file.id} onClick={() => setUploads((current) => current.filter((item) => item.id !== file.id))}>{file.name} ×</button>)}</div>}
-      <div className="flex items-center justify-between"><span className="text-[8px] text-stone-400">{content.length}/2000</span><div className="flex items-center gap-1"><input ref={fileInput} type="file" multiple hidden onChange={(event) => void uploadFiles(event.target.files)} /><button type="button" className="grid size-7 place-items-center rounded-md border-0 bg-stone-100 text-stone-600 disabled:opacity-40" disabled={uploading || uploads.length >= 10} onClick={() => fileInput.current?.click()} aria-label="Attach files"><Paperclip size={13} /></button><button className="grid size-7 place-items-center rounded-md border-0 bg-forest text-white disabled:opacity-40" disabled={(!content.trim() && !uploads.length) || sending || uploading} aria-label="Send message"><Send size={13} /></button></div></div>
+      <div className="flex items-center justify-between"><span className="text-[8px] text-stone-400">{content.length}/2000</span><div className="flex items-center gap-1"><input ref={fileInput} type="file" multiple hidden onChange={(event) => void uploadFiles(event.target.files)} /><button type="button" className="grid size-7 place-items-center rounded-md border-0 bg-stone-100 text-stone-600 disabled:opacity-40" disabled={uploading || uploads.length >= 10} onClick={() => fileInput.current?.click()} aria-label="Attach files"><Paperclip size={13} /></button><button type="button" className="grid size-7 place-items-center rounded-md border-0 bg-stone-100 text-stone-600" onClick={toggleComposerEmoji} aria-label="Insert emoji"><Smile size={13} /></button><button className="grid size-7 place-items-center rounded-md border-0 bg-forest text-white disabled:opacity-40" disabled={(!content.trim() && !uploads.length) || sending || uploading} aria-label="Send message"><Send size={13} /></button></div></div>
     </form>
     <DiscordConnectModal canvasId={canvas.id} open={connectOpen} onClose={() => setConnectOpen(false)} onLinked={() => {
       setDiscordLinked(true)
@@ -388,11 +425,11 @@ export default function CanvasChat() {
       <div className="mt-1 truncate text-stone-500">{reactionHover.participants.length ? reactionHover.participants.join(', ') : 'No participants'}</div>
     </div>, document.body)}
     {popover && createPortal(popover.type === 'emoji'
-      ? <div ref={popoverRef} className="fixed z-[1000] h-72 w-72 overflow-y-auto rounded-xl border border-stone-200 bg-white p-3 shadow-xl" style={{ top: popover.top, left: popover.left }}>{EMOJI_GROUPS.map(([label, emojis]) => <section className="mb-3" key={label}><h4 className="mb-1 text-[9px] font-bold uppercase tracking-wide text-stone-400">{label}</h4><div className="grid grid-cols-8 gap-0.5">{emojis.split(' ').map((emoji) => <button className="grid size-7 place-items-center rounded border-0 bg-transparent text-base hover:bg-stone-100" key={label + emoji} onClick={() => { void react(popover.message, emoji); setPopover(undefined) }}>{emoji}</button>)}</div></section>)}</div>
+      ? <div ref={popoverRef} className="fixed z-[1000] h-72 w-72 overflow-y-auto rounded-xl border border-stone-200 bg-white p-3 shadow-xl" style={{ top: popover.top, left: popover.left }}>{EMOJI_GROUPS.map(([label, emojis]) => <section className="mb-3" key={label}><h4 className="mb-1 text-[9px] font-bold uppercase tracking-wide text-stone-400">{label}</h4><div className="grid grid-cols-8 gap-0.5">{emojis.split(' ').map((emoji) => <button className="grid size-7 place-items-center rounded border-0 bg-transparent text-base hover:bg-stone-100" key={label + emoji} onClick={() => { if (popover.message) { void react(popover.message, emoji); } else { insertEmoji(emoji); } setPopover(undefined) }}>{emoji}</button>)}</div></section>)}</div>
       : <div ref={popoverRef} className="fixed z-[1000] w-48 rounded-lg border border-stone-200 bg-white p-1 text-[10px] shadow-xl" style={{ top: popover.top, left: popover.left }}>
-        <button className="flex w-full items-center gap-2 rounded border-0 bg-transparent px-2 py-2 text-left hover:bg-stone-100" onClick={() => { void copyMessageLink(popover.message); setPopover(undefined) }}><Link2 size={13} /> Copy message link</button>
-        {canModerate && <button className="flex w-full items-center gap-2 rounded border-0 bg-transparent px-2 py-2 text-left hover:bg-stone-100" onClick={() => { saveAsResource(popover.message); setPopover(undefined) }}><BookmarkPlus size={13} /> Save as resource</button>}
-        {canModerate && <button className="flex w-full items-center gap-2 rounded border-0 bg-transparent px-2 py-2 text-left text-red-600 hover:bg-red-50" onClick={() => void deleteMessage(popover.message)}><Trash2 size={13} /> Delete message</button>}
+        <button className="flex w-full items-center gap-2 rounded border-0 bg-transparent px-2 py-2 text-left hover:bg-stone-100" onClick={() => { if (popover.message) { void copyMessageLink(popover.message); setPopover(undefined) } }}><Link2 size={13} /> Copy message link</button>
+        {canModerate && <button className="flex w-full items-center gap-2 rounded border-0 bg-transparent px-2 py-2 text-left hover:bg-stone-100" onClick={() => { if (popover.message) { saveAsResource(popover.message); setPopover(undefined) } }}><BookmarkPlus size={13} /> Save as resource</button>}
+        {canModerate && <button className="flex w-full items-center gap-2 rounded border-0 bg-transparent px-2 py-2 text-left text-red-600 hover:bg-red-50" onClick={() => { if (popover.message) { void deleteMessage(popover.message); } }}><Trash2 size={13} /> Delete message</button>}
       </div>, document.body)}
     {headerMenu && createPortal(<div ref={headerMenuRef} className="fixed z-[1000] w-56 rounded-lg border border-stone-200 bg-white p-1 text-[10px] shadow-xl" style={{ top: headerMenu.top, left: headerMenu.left }}>
       {discordInvite && <a className="flex w-full items-center gap-2 rounded border-0 bg-transparent px-2 py-2 text-left hover:bg-stone-100" href={discordInvite} target="_blank" rel="noreferrer" onClick={() => setHeaderMenu(undefined)}>Join Discord server <ExternalLink size={13} /></a>}

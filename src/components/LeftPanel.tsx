@@ -78,6 +78,12 @@ function ChatPanel() {
     } catch (reason) { setError(reason instanceof Error ? reason.message : 'Chat failed') }
     finally { setPending(false) }
   }
+  const handleKeyDown = (event: React.KeyboardEvent<HTMLTextAreaElement>) => {
+    if (event.key === 'Enter' && !event.shiftKey) {
+      event.preventDefault()
+      void submit()
+    }
+  }
   const saveSnippet = (item: ChatMessage) => {
     const stored = JSON.parse(localStorage.getItem('fieldnotes:resources') ?? '[]') as unknown[]
     localStorage.setItem('fieldnotes:resources', JSON.stringify([{ id: `res-${crypto.randomUUID()}`, kind: 'chat', title: item.content.slice(0, 64), meta: 'AI chat · Saved now', accent: '#b28a3d', content: item.content }, ...stored]))
@@ -94,7 +100,7 @@ function ChatPanel() {
       {error && <div role="alert" className="message text-red-700">{error}</div>}
     </div>
     <form className="chat-compose" onSubmit={(event) => { event.preventDefault(); void submit() }}>
-      <textarea aria-label="Chat message" placeholder="Ask about this canvas…" value={message} onChange={(event) => setMessage(event.target.value)} />
+      <textarea aria-label="Chat message" placeholder="Ask about this canvas…" value={message} onChange={(event) => setMessage(event.target.value)} onKeyDown={handleKeyDown} />
       <div><span>Uses canvas context</span><button aria-label="Send message" disabled={!message.trim() || pending}><Send size={15} /></button></div>
     </form>
   </div>
