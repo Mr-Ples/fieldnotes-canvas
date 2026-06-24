@@ -3,6 +3,7 @@ import { useCallback, useEffect, useLayoutEffect, useRef, useState, type RefObje
 import { Check, Link2, MessageSquareText, MoreHorizontal, Plus, Send, Trash2, X } from 'lucide-react'
 import { Avatar } from './Primitives'
 import { useLocalStorage } from '../hooks/useLocalStorage'
+import { showConfirm, showToast } from './Popups'
 
 type Annotation = { id: string; anchorId?: string; quote: string; author: string; initials: string; time: string; body: string; replies?: string[] }
 type Position = { id: string; top: number; compact: boolean }
@@ -81,23 +82,19 @@ export default function AnnotationLayer({ editorRef, containerRef, canvasId, onD
   useEffect(() => {
     const editor = editorRef.current
     if (!editor) return
-    const capture = (event: MouseEvent | KeyboardEvent) => {
-      if ((event.target as Element | null)?.closest('.annotation-ui')) return
-      requestAnimationFrame(() => {
-        const selected = window.getSelection()
-        if (!selected || selected.isCollapsed || !selected.rangeCount) { if (!composing) setSelection(null); return }
-        const range = selected.getRangeAt(0)
-        if (!editor.contains(range.commonAncestorContainer)) return
-        const quote = selected.toString().replace(/\s+/g, ' ').trim()
-        if (!quote) return
-        const rects = range.getClientRects()
-        const rect = rects[rects.length - 1] ?? range.getBoundingClientRect()
-        setSelection({ range: range.cloneRange(), quote, rect })
-      })
+    const updateSelection = () => {
+      const selected = window.getSelection()
+      if (!selected || selected.isCollapsed || !selected.rangeCount) { if (!composing) setSelection(null); return }
+      const range = selected.getRangeAt(0)
+      if (!editor.contains(range.commonAncestorContainer)) { if (!composing) setSelection(null); return }
+      const quote = selected.toString().replace(/\s+/g, ' ').trim()
+      if (!quote) return
+      const rects = range.getClientRects()
+      const rect = rects[rects.length - 1] ?? range.getBoundingClientRect()
+      setSelection({ range: range.cloneRange(), quote, rect })
     }
-    editor.addEventListener('mouseup', capture)
-    editor.addEventListener('keyup', capture)
-    return () => { editor.removeEventListener('mouseup', capture); editor.removeEventListener('keyup', capture) }
+    editor.ownerDocument?.addEventListener('selectionchange', updateSelection)
+    return () => { editor.ownerDocument?.removeEventListener('selectionchange', updateSelection) }
   }, [editorRef, composing])
 
   useEffect(() => {
@@ -111,6 +108,17 @@ export default function AnnotationLayer({ editorRef, containerRef, canvasId, onD
     editor.addEventListener('mouseover', over); editor.addEventListener('focusin', over); editor.addEventListener('click', click)
     return () => { editor.removeEventListener('mouseover', over); editor.removeEventListener('focusin', over); editor.removeEventListener('click', click) }
   }, [editorRef])
+
+  useEffect(() => {
+    const close = (event: PointerEvent) => {
+      const target = event.target as Element | null
+      if (!target) return
+      if (target.closest('.annotation-menu')) return
+      setMenu(null)
+    }
+    window.addEventListener('pointerdown', close)
+    return () => window.removeEventListener('pointerdown', close)
+  }, [containerRef])
 
   const openComposer = () => { setComposing(true); requestAnimationFrame(() => composerRef.current?.focus()) }
   const closeComposer = () => { setComposing(false); setBody(''); setSelection(null); window.getSelection()?.removeAllRanges() }
@@ -132,22 +140,33 @@ export default function AnnotationLayer({ editorRef, containerRef, canvasId, onD
     const url = new URL(window.location.href); url.hash = id
     await navigator.clipboard.writeText(url.toString())
     setMenu(null)
+    showToast('Link copied')
   }
   const remove = (id: string) => {
-    const editor = editorRef.current
-    editor?.querySelectorAll<HTMLElement>(`[data-annotation-id="${CSS.escape(id)}"]`).forEach((anchor) => {
-      if (anchor.tagName === 'MARK') anchor.replaceWith(...Array.from(anchor.childNodes))
-      else { delete anchor.dataset.annotationId; anchor.classList.remove('annotation-highlight') }
-    })
-    editor?.normalize()
-    setItems(items.filter((item) => item.id !== id))
-    setActive(null); setMenu(null); onDocumentChange()
+    void (async () => {
+      if (!await showConfirm({
+        title: 'Delete annotation thread?',
+        message: 'This removes the thread from the document.',
+        confirmLabel: 'Delete thread',
+        cancelLabel: 'Keep thread',
+        tone: 'danger',
+      })) return
+      const editor = editorRef.current
+      editor?.querySelectorAll<HTMLElement>(`[data-annotation-id="${CSS.escape(id)}"]`).forEach((anchor) => {
+        if (anchor.tagName === 'MARK') anchor.replaceWith(...Array.from(anchor.childNodes))
+        else { delete anchor.dataset.annotationId; anchor.classList.remove('annotation-highlight') }
+      })
+      editor?.normalize()
+      setItems(items.filter((item) => item.id !== id))
+      setActive(null); setMenu(null); onDocumentChange()
+      showToast('Annotation deleted')
+    })()
   }
 
   const root = containerRef.current
   if (!root) return null
   const rootRect = root.getBoundingClientRect()
-  const trackLeft = Math.max(16, root.clientWidth - 308)
+  const trackLeft = Math.max(16, Math.min(root.clientWidth - 308, editorRef.current ? editorRef.current.getBoundingClientRect().right - rootRect.left + 18 : root.clientWidth - 308))
   return createPortal(<div className="annotation-ui" aria-live="polite">
     {selection && !composing && <button className="annotation-add" style={{ top: selection.rect.top - rootRect.top + root.scrollTop + selection.rect.height / 2, left: trackLeft }} onMouseDown={(event) => event.preventDefault()} onClick={openComposer} aria-label="Add annotation to selection"><Plus size={14}/> Add annotation</button>}
     {selection && composing && <div className="annotation-composer" style={{ top: Math.min(selection.rect.bottom - rootRect.top + root.scrollTop + 8, root.scrollTop + root.clientHeight - 210), left: trackLeft }}>

@@ -77,8 +77,8 @@ export default function DiscordConnectModal({ canvasId, open, onClose, onLinked 
   }
 
   if (!open) return null
-  return <div className="fixed inset-0 z-[200] grid place-items-center bg-ink/45 p-4 backdrop-blur-sm" role="dialog" aria-modal="true" aria-label="Connect Discord">
-    <div className="w-full max-w-md overflow-hidden rounded-2xl bg-paper shadow-2xl">
+  return <div className="fixed inset-0 z-[200] grid place-items-center bg-ink/45 p-4 backdrop-blur-sm" role="presentation" onPointerDown={onClose}>
+    <div className="w-full max-w-md overflow-hidden rounded-2xl bg-paper shadow-2xl" role="dialog" aria-modal="true" aria-label="Connect Discord" onPointerDown={(event) => event.stopPropagation()}>
       <header className="flex items-center gap-2 border-b border-rule px-5 py-4">
         {guild && <button className="icon-button" onClick={() => { setGuild(undefined); setChannels([]); setError('') }} aria-label="Back"><ArrowLeft size={17}/></button>}
         <div className="flex-1"><h2 className="m-0 font-serif text-xl font-semibold">{guild ? `Choose a channel in ${guild.name}` : 'Connect Discord'}</h2><p className="m-0 mt-1 text-[10px] text-stone-500">{guild ? 'Messages will synchronize in both directions.' : 'Choose a server you manage.'}</p></div>

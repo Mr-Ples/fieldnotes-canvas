@@ -1,11 +1,12 @@
 import { useEffect, useRef, useState, type FormEvent, type KeyboardEvent, type RefObject } from 'react'
-import { ArrowUpRight, Bold, Check, ChevronDown, Code2, File, FileText, Heading2, Italic, Link2, List, MessageCircle, MoreHorizontal, Plus, Quote, Reply, Send, Upload, Video } from 'lucide-react'
+import { ArrowUpRight, Bold, Check, ChevronDown, Code2, File, FileText, Heading2, Italic, Link2, List, MessageCircle, MoreHorizontal, Plus, Quote, Reply, Send, Upload, Video, X } from 'lucide-react'
 import { canvases, comments, resources, type Canvas, type Comment } from '../data'
 import { Avatar, CopyLinkButton, IconButton, TabButton } from './Primitives'
 import { useLocalStorage } from '../hooks/useLocalStorage'
 import { CloudinaryMediaStorage } from '../services/media'
 import DiscordIdentity from './DiscordIdentity'
 import AnnotationLayer from './AnnotationLayer'
+import { showPrompt, showToast } from './Popups'
 
 export default function CenterPanel() {
   const [tab, setTab] = useState<'notes' | 'resources'>('notes')
@@ -40,8 +41,8 @@ export default function CenterPanel() {
       link.search = `?share=${result.token}`
       link.hash = ''
       await navigator.clipboard.writeText(link.toString())
-      window.alert('Private view link copied to your clipboard.')
-    } catch (reason) { window.alert(reason instanceof Error ? reason.message : 'Could not create share link') }
+      showToast('Link copied', 'Private view link copied to your clipboard.')
+    } catch (reason) { showToast('Could not create share link', reason instanceof Error ? reason.message : 'Try again') }
     finally { setSharing(false) }
   }
   useEffect(() => {
@@ -61,9 +62,10 @@ export default function CenterPanel() {
       <h1>{activeCanvas.title}</h1>
       <p>Notes on interfaces that protect focus, invite curiosity, and help ideas find each other.</p>
       <div className="tag-row">
-        {tags.map((item) => <button key={item} className="tag">#{item}</button>)}
-        <form onSubmit={(event) => { event.preventDefault(); if (tag.trim()) setTags([...tags, tag.trim()]); setTag('') }}>
-          <Plus size={13} /><input aria-label="Add tag" placeholder="Add tag" value={tag} onChange={(event) => setTag(event.target.value)} />
+        {tags.map((item) => <div key={item} className="tag"><span>#{item}</span><button type="button" onClick={() => setTags(tags.filter((tagItem) => tagItem !== item))} aria-label={`Remove tag ${item}`}><X size={11} /></button></div>)}
+        <form className="tag-form" onSubmit={(event) => { event.preventDefault(); if (tag.trim()) setTags([...tags, tag.trim()]); setTag('') }}>
+          <input aria-label="Add tag" placeholder="Add tag" value={tag} onChange={(event) => setTag(event.target.value)} />
+          <button type="submit" disabled={!tag.trim()}><Plus size={13} /> Add</button>
         </form>
       </div>
     </div>
@@ -100,8 +102,15 @@ function Notes({ canvasId, setSaved, containerRef }: { canvasId: string; setSave
     }
   }
   const addLink = () => {
-    const href = window.prompt('Paste a resource, comment, annotation, chat, or web URL')?.trim()
-    if (href) format('createLink', href)
+    void (async () => {
+      const href = await showPrompt({
+        title: 'Add link',
+        message: 'Paste a resource, comment, annotation, chat, or web URL.',
+        placeholder: 'https://…',
+        confirmLabel: 'Add link',
+      })
+      if (href) format('createLink', href.trim())
+    })()
   }
   return <div className="note-wrap">
     <div className="format-bar" aria-label="Markdown formatting">
@@ -193,6 +202,14 @@ function Comments() {
   const [text, setText] = useState('')
   const [items, setItems] = useLocalStorage('fieldnotes:comments', comments)
   const add = () => { if (!text.trim()) return; setItems([...items, { id: `comment-${Date.now()}`, author: 'You', initials: 'YO', time: 'Now', body: text }]); setText('') }
+  const saveAsResource = (comment: Comment) => {
+    const key = 'fieldnotes:resources'
+    const current = JSON.parse(localStorage.getItem(key) ?? JSON.stringify(resources)) as unknown[]
+    const content = [comment.body, ...(comment.replies ?? []).map((reply) => `${reply.author}: ${reply.body}`)].join('\n\n')
+    localStorage.setItem(key, JSON.stringify([{ id: `res-comment-${crypto.randomUUID()}`, kind: 'chat', title: `Comment from ${comment.author}`, meta: `Comment · Saved ${new Date().toLocaleDateString()}`, accent: '#5865f2', content }, ...current]))
+    window.dispatchEvent(new Event('fieldnotes:resources-changed'))
+    showToast('Saved to resources')
+  }
   const handleKeyDown = (event: KeyboardEvent<HTMLTextAreaElement>) => {
     if (event.key === 'Enter' && !event.shiftKey) {
       event.preventDefault()
@@ -200,16 +217,18 @@ function Comments() {
     }
   }
   const reply = (id: string) => {
-    const body = window.prompt('Write a reply')?.trim()
-    if (!body) return
-    const nested = { id: `reply-${crypto.randomUUID()}`, author: 'You', initials: 'YO', time: 'Now', body }
-    setItems(items.map((item) => item.id === id ? { ...item, replies: [...(item.replies ?? []), nested] } : item))
+    void (async () => {
+      const body = await showPrompt({ title: 'Reply', message: 'Write a reply.', placeholder: 'Reply…', confirmLabel: 'Reply' })
+      if (!body) return
+      const nested = { id: `reply-${crypto.randomUUID()}`, author: 'You', initials: 'YO', time: 'Now', body: body.trim() }
+      setItems(items.map((item) => item.id === id ? { ...item, replies: [...(item.replies ?? []), nested] } : item))
+    })()
   }
   return <section className="comments-section"><div className="section-title"><h2>Discussion <span>{items.length}</span></h2></div>
     <div className="comment-compose"><Avatar initials="YO" color="ink"/><div><textarea value={text} onChange={(event) => setText(event.target.value)} onKeyDown={handleKeyDown} placeholder="Add to the discussion…"/><button onClick={add} disabled={!text.trim()}><Send size={14}/> Comment</button></div></div>
-    {items.map((comment) => <CommentItem key={comment.id} comment={comment} onReply={reply}/>)}</section>
+    {items.map((comment) => <CommentItem key={comment.id} comment={comment} onReply={reply} onSave={saveAsResource}/>)}</section>
 }
 
-function CommentItem({ comment, onReply }: { comment: Comment; onReply: (id: string) => void }) {
-  return <article className="comment deep-link-target" id={comment.id}><Avatar initials={comment.initials} color="clay"/><div className="comment-body"><div><strong>{comment.author}</strong><time>{comment.time}</time></div><p>{comment.body}</p><div className="comment-actions"><button onClick={() => onReply(comment.id)}><Reply size={13}/> Reply</button><CopyLinkButton target={comment.id}/></div>{comment.replies?.map((reply) => <CommentItem key={reply.id} comment={reply} onReply={onReply}/>)}</div></article>
+function CommentItem({ comment, onReply, onSave }: { comment: Comment; onReply: (id: string) => void; onSave: (comment: Comment) => void }) {
+  return <article className="comment deep-link-target" id={comment.id}><Avatar initials={comment.initials} color="clay"/><div className="comment-body"><div><strong>{comment.author}</strong><time>{comment.time}</time></div><p>{comment.body}</p><div className="comment-actions"><button onClick={() => onReply(comment.id)}><Reply size={13}/> Reply</button><button onClick={() => onSave(comment)}><FileText size={13} /> Save as resource</button><CopyLinkButton target={comment.id}/></div>{comment.replies?.map((reply) => <CommentItem key={reply.id} comment={reply} onReply={onReply} onSave={onSave}/>)}</div></article>
 }

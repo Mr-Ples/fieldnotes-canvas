@@ -3,6 +3,7 @@ import { Files, MessageSquare, NotebookPen, PanelLeftClose, PanelRightClose } fr
 import CenterPanel from './components/CenterPanel'
 import LeftPanel from './components/LeftPanel'
 import RightPanel from './components/RightPanel'
+import { PopupHost } from './components/Popups'
 
 type MobilePanel = 'left' | 'center' | 'right'
 
@@ -84,6 +85,7 @@ export default function App() {
       <button className={mobilePanel === 'center' ? 'active' : ''} onClick={() => setMobilePanel('center')}><NotebookPen size={19}/><span>Notes</span></button>
       <button className={mobilePanel === 'right' ? 'active' : ''} onClick={() => setMobilePanel('right')}><MessageSquare size={19}/><span>Discord</span></button>
     </nav>
+    <PopupHost />
   </div>
 }
 

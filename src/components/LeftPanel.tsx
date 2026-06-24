@@ -1,10 +1,11 @@
 import { useEffect, useState } from 'react'
 import { Archive, Bot, ChevronDown, FileText, FolderOpen, MessageSquare, MoreHorizontal, Plus, Search, Send, Sparkles } from 'lucide-react'
 import { Virtuoso } from 'react-virtuoso'
-import { canvases as seedCanvases } from '../data'
+import { canvases as seedCanvases, resources as seedResources } from '../data'
 import { CopyLinkButton, IconButton, TabButton } from './Primitives'
 import { useLocalStorage } from '../hooks/useLocalStorage'
 import { completeChat, type ChatMessage } from '../services/api'
+import { showPrompt, showToast } from './Popups'
 
 export default function LeftPanel() {
   const [tab, setTab] = useState<'canvases' | 'chat'>(() => window.location.hash.startsWith('#chat-') ? 'chat' : 'canvases')
@@ -16,11 +17,13 @@ export default function LeftPanel() {
   })
   const filtered = canvases.filter((canvas) => canvas.title.toLowerCase().includes(query.toLowerCase()))
   const createCanvas = () => {
-    const title = window.prompt('Canvas name')?.trim()
-    if (!title) return
-    const canvas = { id: crypto.randomUUID(), title, emoji: '◇', updated: 'Now', group: 'Active' }
-    setCanvases([canvas, ...canvases])
-    selectCanvas(canvas)
+    void (async () => {
+      const title = await showPrompt({ title: 'New canvas', message: 'Name this canvas.', placeholder: 'Canvas name', confirmLabel: 'Create' })
+      if (!title) return
+      const canvas = { id: crypto.randomUUID(), title: title.trim(), emoji: '◇', updated: 'Now', group: 'Active' }
+      setCanvases([canvas, ...canvases])
+      selectCanvas(canvas)
+    })()
   }
   const selectCanvas = (canvas: typeof canvases[number]) => {
     setActiveId(canvas.id)
@@ -85,9 +88,10 @@ function ChatPanel() {
     }
   }
   const saveSnippet = (item: ChatMessage) => {
-    const stored = JSON.parse(localStorage.getItem('fieldnotes:resources') ?? '[]') as unknown[]
+    const stored = JSON.parse(localStorage.getItem('fieldnotes:resources') ?? JSON.stringify(seedResources)) as unknown[]
     localStorage.setItem('fieldnotes:resources', JSON.stringify([{ id: `res-${crypto.randomUUID()}`, kind: 'chat', title: item.content.slice(0, 64), meta: 'AI chat · Saved now', accent: '#b28a3d', content: item.content }, ...stored]))
     window.dispatchEvent(new CustomEvent('fieldnotes:resources-changed'))
+    showToast('Saved to resources')
   }
   return <div className="chat-panel">
     <div className="chat-heading"><div><span className="eyebrow">Current chat</span><h3>Attention as a material</h3></div><IconButton label="New chat" onClick={() => setMessages([])}><Plus size={18} /></IconButton></div>

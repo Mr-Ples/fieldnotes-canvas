@@ -7,6 +7,7 @@ import DiscordConnectModal from './DiscordConnectModal'
 import DiscordIdentity, { type DiscordUser } from './DiscordIdentity'
 import { CloudinaryMediaStorage, type StoredMedia } from '../services/media'
 import { canvases, resources as defaultResources } from '../data'
+import { showConfirm, showToast } from './Popups'
 
 type Message = {
   id: string; origin: 'website' | 'discord'; authorId: string; authorName: string; authorAvatar?: string;
@@ -377,6 +378,7 @@ export default function CanvasChat() {
   const copyMessageLink = async (message: Message) => {
     await navigator.clipboard.writeText(messageUrl(message))
     setPopover(undefined)
+    showToast('Link copied')
   }
 
   const forwardMessage = async (message: Message) => {
@@ -387,7 +389,13 @@ export default function CanvasChat() {
 
   const deleteMessage = async (message: Message) => {
     if (!canModerate) return
-    if (!window.confirm('Delete this message from Fieldnotes and Discord?')) return
+    if (!await showConfirm({
+      title: 'Delete message?',
+      message: 'This removes the message from Fieldnotes and Discord.',
+      confirmLabel: 'Delete message',
+      cancelLabel: 'Keep message',
+      tone: 'danger',
+    })) return
     const response = await fetch('/api/canvases/' + encodeURIComponent(canvas.id) + '/messages/' + message.id, {
       method: 'DELETE', headers: { 'x-fieldnotes-device': getDeviceId(), 'x-fieldnotes-owner-token': ownerToken },
     })
@@ -395,6 +403,7 @@ export default function CanvasChat() {
     if (!response.ok || !result.message) { setError(result.error ?? 'Could not delete message'); return }
     setMessages((current) => current.filter((item) => item.id !== result.message!.id))
     setPopover(undefined)
+    showToast('Message deleted')
   }
 
   const saveAsResource = (message: Message) => {
@@ -409,11 +418,17 @@ export default function CanvasChat() {
     localStorage.setItem(key, JSON.stringify([resource, ...current]))
     window.dispatchEvent(new Event('fieldnotes:resources-changed'))
     setPopover(undefined)
+    showToast('Saved to resources')
   }
 
   const saveConversation = async () => {
     if (!canModerate) return
-    if (!window.confirm('Save the entire retained conversation as a resource?')) return
+    if (!await showConfirm({
+      title: 'Save conversation as a resource?',
+      message: 'This copies the retained conversation into the resources list.',
+      confirmLabel: 'Save conversation',
+      cancelLabel: 'Cancel',
+    })) return
     setSaveState('saving')
     try {
       const collected: Message[] = []
@@ -434,6 +449,7 @@ export default function CanvasChat() {
       localStorage.setItem(key, JSON.stringify([resource, ...current]))
       window.dispatchEvent(new Event('fieldnotes:resources-changed'))
       setSaveState('saved')
+      showToast('Saved to resources')
     } catch (reason) {
       setSaveState('error')
       setError(reason instanceof Error ? reason.message : 'Could not save conversation')

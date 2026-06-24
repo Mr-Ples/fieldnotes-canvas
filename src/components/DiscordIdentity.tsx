@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import { LogIn, LogOut } from 'lucide-react'
+import { showConfirm, showToast } from './Popups'
 
 export type DiscordUser = { id: string; displayName: string; username: string; avatar?: string }
 
@@ -54,10 +55,18 @@ export default function DiscordIdentity({ compact = false, onChange }: { compact
   }
 
   const signOut = async () => {
+    if (!await showConfirm({
+      title: 'Sign out of Discord?',
+      message: 'You will need to connect Discord again before posting as your Discord identity.',
+      confirmLabel: 'Sign out',
+      cancelLabel: 'Keep me signed in',
+      tone: 'danger',
+    })) return
     await fetch('/api/discord/logout', { method: 'POST' })
     setUser(null)
     onChange?.(null)
     window.dispatchEvent(new CustomEvent('fieldnotes:discord-auth-synced', { detail: null }))
+    showToast('Signed out')
   }
 
   if (loading) return compact ? null : <span className="text-[9px] text-stone-400">Checking identity…</span>
