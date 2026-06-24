@@ -316,7 +316,7 @@ export default function CanvasChat() {
       <div className="flex items-start justify-between gap-2">
         <div className="min-w-0">
           <div className="truncate text-[11px] font-semibold">{discordChannelName ? `#${discordChannelName}` : canvas.title}</div>
-          <div className={`mt-0.5 flex items-center gap-1 text-[8px] ${connected ? 'text-emerald-700' : 'text-stone-400'}`}>{connected ? <Check size={10}/> : <RefreshCw size={10}/>} {connected ? 'Live' : 'Connecting'}{discordLinked && <span>· Discord linked</span>}{saveState !== 'idle' && <span>· {saveState === 'saving' ? 'Saving…' : saveState === 'saved' ? 'Saved to resources' : 'Save failed'}</span>}</div>
+          <div className={`mt-0.5 flex items-center gap-1 text-[8px] ${connected ? 'text-emerald-700' : 'text-stone-400'}`}>{connected ? <Check size={10} /> : <RefreshCw size={10} />} {connected ? 'Live' : 'Connecting'}{discordLinked && <span>· Discord linked</span>}{saveState !== 'idle' && <span>· {saveState === 'saving' ? 'Saving…' : saveState === 'saved' ? 'Saved to resources' : 'Save failed'}</span>}</div>
         </div>
         <button className="grid size-7 place-items-center rounded-md border border-stone-200 bg-white text-stone-500 hover:bg-stone-50" aria-label="More channel options" onClick={(event) => {
           const rect = event.currentTarget.getBoundingClientRect()
@@ -327,7 +327,7 @@ export default function CanvasChat() {
             left: Math.max(8, Math.min(window.innerWidth - width - 8, rect.right - width)),
             top: Math.max(8, Math.min(window.innerHeight - height - 8, rect.bottom + 6)),
           })
-        }}><MoreHorizontal size={16}/></button>
+        }}><MoreHorizontal size={16} /></button>
       </div>
     </div>
     <Virtuoso ref={list} className={'min-h-0 flex-1 ' + (linkReady ? '' : 'invisible')} data={messages} followOutput={linkedMessageId ? false : 'smooth'} itemContent={(_, message) => {
@@ -335,15 +335,15 @@ export default function CanvasChat() {
       return <article id={`discord-message-${message.id}`} className="deep-link-target group relative px-3 py-2 hover:bg-stone-100/70" onMouseEnter={() => { if (popover && popover.message.id !== message.id) setPopover(undefined) }}>
         <div className="invisible absolute -top-3 right-2 z-20 flex items-center rounded-md border border-stone-200 bg-white p-0.5 shadow-sm group-hover:visible group-focus-within:visible">
           {QUICK_REACTIONS.map((emoji) => <button className="grid size-7 place-items-center rounded border-0 bg-transparent text-sm hover:bg-stone-100" key={emoji} title={'React ' + emoji} onClick={() => void react(message, emoji)}>{emoji}</button>)}
-          <button className="grid size-7 place-items-center rounded border-0 bg-transparent text-stone-500 hover:bg-stone-100" title="More reactions" onClick={(event) => togglePopover('emoji', message, event)}><SmilePlus size={14}/></button>
-          <button className="grid size-7 place-items-center rounded border-0 bg-transparent text-stone-500 hover:bg-stone-100" title="Reply" onClick={() => setReplyTo(message)}><MessageCircleReply size={14}/></button>
-          <button className="grid size-7 place-items-center rounded border-0 bg-transparent text-stone-500 hover:bg-stone-100" title="Forward" onClick={() => void forwardMessage(message)}><Forward size={14}/></button>
-          <button className="grid size-7 place-items-center rounded border-0 bg-transparent text-stone-500 hover:bg-stone-100" title="More" onClick={(event) => togglePopover('more', message, event)}><MoreHorizontal size={15}/></button>
+          <button className="grid size-7 place-items-center rounded border-0 bg-transparent text-stone-500 hover:bg-stone-100" title="More reactions" onClick={(event) => togglePopover('emoji', message, event)}><SmilePlus size={14} /></button>
+          <button className="grid size-7 place-items-center rounded border-0 bg-transparent text-stone-500 hover:bg-stone-100" title="Reply" onClick={() => setReplyTo(message)}><MessageCircleReply size={14} /></button>
+          <button className="grid size-7 place-items-center rounded border-0 bg-transparent text-stone-500 hover:bg-stone-100" title="Forward" onClick={() => void forwardMessage(message)}><Forward size={14} /></button>
+          <button className="grid size-7 place-items-center rounded border-0 bg-transparent text-stone-500 hover:bg-stone-100" title="More" onClick={(event) => togglePopover('more', message, event)}><MoreHorizontal size={15} /></button>
         </div>
-        {parent && <span aria-hidden="true" className="pointer-events-none absolute left-[25px] top-4 h-[14px] w-[31px] rounded-tl-xl border-l-2 border-t-2 border-stone-300"/>}
-        {parent && <button className="relative z-10 mb-0.5 ml-9 flex max-w-[calc(100%-2.25rem)] items-center gap-1.5 truncate border-0 bg-transparent p-0 text-left text-[9px] text-stone-400 hover:text-stone-600" onClick={() => jumpToMessage(parent.id)}>{parent.authorAvatar ? <span className="relative z-20 grid size-4 place-items-center rounded-full bg-paper"><img className="size-4 rounded-full" src={parent.authorAvatar} alt=""/></span> : <span className="relative z-20 grid size-4 place-items-center rounded-full bg-stone-200 text-[6px]">{parent.authorName.slice(0, 2).toUpperCase()}</span>}<strong>{parent.authorName}</strong><span className="truncate">{parent.content || 'Attachment'}</span></button>}
+        {parent && <span aria-hidden="true" className="pointer-events-none absolute left-[25px] top-4 h-[14px] w-[31px] rounded-tl-xl border-l-2 border-t-2 border-stone-300" />}
+        {parent && <button className="relative z-10 mb-0.5 ml-9 flex max-w-[calc(100%-2.25rem)] items-center gap-1.5 truncate border-0 bg-transparent p-0 text-left text-[9px] text-stone-400 hover:text-stone-600" onClick={() => jumpToMessage(parent.id)}>{parent.authorAvatar ? <span className="relative z-20 grid size-4 place-items-center rounded-full bg-paper"><img className="size-4 rounded-full" src={parent.authorAvatar} alt="" /></span> : <span className="relative z-20 grid size-4 place-items-center rounded-full bg-stone-200 text-[6px]">{parent.authorName.slice(0, 2).toUpperCase()}</span>}<strong>{parent.authorName}</strong><span className="truncate">{parent.content || 'Attachment'}</span></button>}
         <div className="flex gap-2">
-          {message.authorAvatar ? <img src={message.authorAvatar} alt="" className="size-7 rounded-full"/> : <span className="avatar avatar-sage">{message.authorName.slice(0, 2).toUpperCase()}</span>}
+          {message.authorAvatar ? <img src={message.authorAvatar} alt="" className="size-7 rounded-full" /> : <span className="avatar avatar-sage">{message.authorName.slice(0, 2).toUpperCase()}</span>}
           <div className="min-w-0 flex-1">
             <div className="flex items-center gap-1.5"><strong className="truncate text-[10px]">{message.authorName}</strong>{message.origin === 'discord' && <span className="rounded bg-indigo-100 px-1 text-[7px] font-bold text-indigo-700">DISCORD</span>}<time className="text-[8px] text-stone-400">{new Date(message.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</time></div>
             <p className="my-1 whitespace-pre-wrap font-serif text-xs leading-relaxed text-stone-700">{message.content}</p>
@@ -362,18 +362,18 @@ export default function CanvasChat() {
           </div>
         </div>
       </article>
-    }}/>
-    {error && <div role="alert" className="flex items-center gap-1 px-3 py-1 text-[9px] text-red-700"><Unplug size={10}/>{error}</div>}
+    }} />
+    {error && <div role="alert" className="flex items-center gap-1 px-3 py-1 text-[9px] text-red-700"><Unplug size={10} />{error}</div>}
     <div className="min-h-4 px-3 text-[9px] italic text-stone-400">{typingLabel([...typers.values()].map((typer) => typer.name))}</div>
     <div className="flex items-center justify-between border-t border-rule px-3 pt-2">
-      {identity ? <span className="text-[9px] text-stone-400">Posting as {identity.displayName}</span> : <label className="flex items-center gap-1 text-[9px] text-stone-400">Posting as <input className="w-28 rounded border border-stone-200 bg-white px-1.5 py-1 text-[9px] text-stone-700" maxLength={32} value={guestName} onChange={(event) => setGuestName(event.target.value)} onBlur={() => setGuestName(saveGuestName(guestName))}/></label>}
-      <DiscordIdentity compact onChange={(next) => setIdentity(next)}/>
+      {identity ? <span className="text-[9px] text-stone-400">Posting as {identity.displayName}</span> : <label className="flex items-center gap-1 text-[9px] text-stone-400">Posting as <input className="w-28 rounded border border-stone-200 bg-white px-1.5 py-1 text-[9px] text-stone-700" maxLength={32} value={guestName} onChange={(event) => setGuestName(event.target.value)} onBlur={() => setGuestName(saveGuestName(guestName))} /></label>}
+      <DiscordIdentity compact onChange={(next) => setIdentity(next)} />
     </div>
     <form className="m-3 mt-2 rounded-lg border border-stone-300 bg-white p-2" onSubmit={(event) => { event.preventDefault(); void send() }}>
-      {replyTo && <div className="-mx-2 -mt-2 mb-2 flex items-center gap-2 rounded-t-lg border-b border-stone-200 bg-stone-50 px-2 py-1.5 text-[9px]">{replyTo.authorAvatar ? <img className="size-5 rounded-full" src={replyTo.authorAvatar} alt=""/> : <span className="grid size-5 place-items-center rounded-full bg-stone-200 text-[7px]">{replyTo.authorName.slice(0, 2).toUpperCase()}</span>}<MessageCircleReply size={11} className="shrink-0 text-indigo-500"/><button type="button" className="min-w-0 flex-1 truncate border-0 bg-transparent text-left text-stone-500" onClick={() => jumpToMessage(replyTo.id)}>Replying to <strong className="text-stone-700">{replyTo.authorName}</strong> · {replyTo.content || 'Attachment'}</button><button type="button" className="grid size-5 place-items-center border-0 bg-transparent text-stone-400" onClick={() => setReplyTo(undefined)}>×</button></div>}
-      <textarea ref={composerRef} rows={1} className="w-full resize-none border-0 bg-transparent text-[11px] outline-none" style={{ overflowY: 'hidden' }} maxLength={2000} placeholder="Message this canvas and Discord…" value={content} onChange={(event) => { setContent(event.target.value); announceTyping() }}/>
+      {replyTo && <div className="-mx-2 -mt-2 mb-2 flex items-center gap-2 rounded-t-lg border-b border-stone-200 bg-stone-50 px-2 py-1.5 text-[9px]">{replyTo.authorAvatar ? <img className="size-5 rounded-full" src={replyTo.authorAvatar} alt="" /> : <span className="grid size-5 place-items-center rounded-full bg-stone-200 text-[7px]">{replyTo.authorName.slice(0, 2).toUpperCase()}</span>}<MessageCircleReply size={11} className="shrink-0 text-indigo-500" /><button type="button" className="min-w-0 flex-1 truncate border-0 bg-transparent text-left text-stone-500" onClick={() => jumpToMessage(replyTo.id)}>Replying to <strong className="text-stone-700">{replyTo.authorName}</strong> · {replyTo.content || 'Attachment'}</button><button type="button" className="grid size-5 place-items-center border-0 bg-transparent text-stone-400" onClick={() => setReplyTo(undefined)}>×</button></div>}
+      <textarea ref={composerRef} rows={1} className="w-full resize-none border-0 bg-transparent text-[11px] outline-none" style={{ overflowY: 'hidden' }} maxLength={2000} placeholder="Message this canvas and Discord…" value={content} onChange={(event) => { setContent(event.target.value); announceTyping() }} />
       {uploads.length > 0 && <div className="mb-1 flex flex-wrap gap-1">{uploads.map((file) => <button type="button" className="rounded bg-stone-100 px-1.5 py-1 text-[8px]" key={file.id} onClick={() => setUploads((current) => current.filter((item) => item.id !== file.id))}>{file.name} ×</button>)}</div>}
-      <div className="flex items-center justify-between"><span className="text-[8px] text-stone-400">{content.length}/2000</span><div className="flex items-center gap-1"><input ref={fileInput} type="file" multiple hidden onChange={(event) => void uploadFiles(event.target.files)}/><button type="button" className="grid size-7 place-items-center rounded-md border-0 bg-stone-100 text-stone-600 disabled:opacity-40" disabled={uploading || uploads.length >= 10} onClick={() => fileInput.current?.click()} aria-label="Attach files"><Paperclip size={13}/></button><button className="grid size-7 place-items-center rounded-md border-0 bg-forest text-white disabled:opacity-40" disabled={(!content.trim() && !uploads.length) || sending || uploading} aria-label="Send message"><Send size={13}/></button></div></div>
+      <div className="flex items-center justify-between"><span className="text-[8px] text-stone-400">{content.length}/2000</span><div className="flex items-center gap-1"><input ref={fileInput} type="file" multiple hidden onChange={(event) => void uploadFiles(event.target.files)} /><button type="button" className="grid size-7 place-items-center rounded-md border-0 bg-stone-100 text-stone-600 disabled:opacity-40" disabled={uploading || uploads.length >= 10} onClick={() => fileInput.current?.click()} aria-label="Attach files"><Paperclip size={13} /></button><button className="grid size-7 place-items-center rounded-md border-0 bg-forest text-white disabled:opacity-40" disabled={(!content.trim() && !uploads.length) || sending || uploading} aria-label="Send message"><Send size={13} /></button></div></div>
     </form>
     <DiscordConnectModal canvasId={canvas.id} open={connectOpen} onClose={() => setConnectOpen(false)} onLinked={() => {
       setDiscordLinked(true)
@@ -382,7 +382,7 @@ export default function CanvasChat() {
         if (response.ok) setDiscordInvite(result.inviteUrl ?? '')
         else setDiscordAuthorization(result.authorizationUrl ?? '')
       })
-    }}/>
+    }} />
     {reactionHover && createPortal(<div className="fixed z-[1000] w-60 rounded-lg border border-stone-200 bg-white px-2 py-1.5 text-[10px] shadow-xl" style={{ top: reactionHover.top, left: reactionHover.left }}>
       <div className="font-semibold text-stone-700">{renderEmoji(reactionHover.emoji)} Reaction</div>
       <div className="mt-1 truncate text-stone-500">{reactionHover.participants.length ? reactionHover.participants.join(', ') : 'No participants'}</div>
@@ -390,14 +390,14 @@ export default function CanvasChat() {
     {popover && createPortal(popover.type === 'emoji'
       ? <div ref={popoverRef} className="fixed z-[1000] h-72 w-72 overflow-y-auto rounded-xl border border-stone-200 bg-white p-3 shadow-xl" style={{ top: popover.top, left: popover.left }}>{EMOJI_GROUPS.map(([label, emojis]) => <section className="mb-3" key={label}><h4 className="mb-1 text-[9px] font-bold uppercase tracking-wide text-stone-400">{label}</h4><div className="grid grid-cols-8 gap-0.5">{emojis.split(' ').map((emoji) => <button className="grid size-7 place-items-center rounded border-0 bg-transparent text-base hover:bg-stone-100" key={label + emoji} onClick={() => { void react(popover.message, emoji); setPopover(undefined) }}>{emoji}</button>)}</div></section>)}</div>
       : <div ref={popoverRef} className="fixed z-[1000] w-48 rounded-lg border border-stone-200 bg-white p-1 text-[10px] shadow-xl" style={{ top: popover.top, left: popover.left }}>
-        <button className="flex w-full items-center gap-2 rounded border-0 bg-transparent px-2 py-2 text-left hover:bg-stone-100" onClick={() => { void copyMessageLink(popover.message); setPopover(undefined) }}><Link2 size={13}/> Copy message link</button>
-        {canModerate && <button className="flex w-full items-center gap-2 rounded border-0 bg-transparent px-2 py-2 text-left hover:bg-stone-100" onClick={() => { saveAsResource(popover.message); setPopover(undefined) }}><BookmarkPlus size={13}/> Save as resource</button>}
-        {canModerate && <button className="flex w-full items-center gap-2 rounded border-0 bg-transparent px-2 py-2 text-left text-red-600 hover:bg-red-50" onClick={() => void deleteMessage(popover.message)}><Trash2 size={13}/> Delete message</button>}
+        <button className="flex w-full items-center gap-2 rounded border-0 bg-transparent px-2 py-2 text-left hover:bg-stone-100" onClick={() => { void copyMessageLink(popover.message); setPopover(undefined) }}><Link2 size={13} /> Copy message link</button>
+        {canModerate && <button className="flex w-full items-center gap-2 rounded border-0 bg-transparent px-2 py-2 text-left hover:bg-stone-100" onClick={() => { saveAsResource(popover.message); setPopover(undefined) }}><BookmarkPlus size={13} /> Save as resource</button>}
+        {canModerate && <button className="flex w-full items-center gap-2 rounded border-0 bg-transparent px-2 py-2 text-left text-red-600 hover:bg-red-50" onClick={() => void deleteMessage(popover.message)}><Trash2 size={13} /> Delete message</button>}
       </div>, document.body)}
     {headerMenu && createPortal(<div ref={headerMenuRef} className="fixed z-[1000] w-56 rounded-lg border border-stone-200 bg-white p-1 text-[10px] shadow-xl" style={{ top: headerMenu.top, left: headerMenu.left }}>
-      {discordInvite && <a className="flex w-full items-center gap-2 rounded border-0 bg-transparent px-2 py-2 text-left hover:bg-stone-100" href={discordInvite} target="_blank" rel="noreferrer" onClick={() => setHeaderMenu(undefined)}>Join Discord server <ExternalLink size={13}/></a>}
-      {!discordInvite && discordAuthorization && <a className="flex w-full items-center gap-2 rounded border-0 bg-transparent px-2 py-2 text-left hover:bg-stone-100" href={discordAuthorization} target="_blank" rel="noreferrer" onClick={() => setHeaderMenu(undefined)}>Join Discord server <ExternalLink size={13}/></a>}
-      {canModerate && <button className="flex w-full items-center gap-2 rounded border-0 bg-transparent px-2 py-2 text-left hover:bg-stone-100" onClick={() => { void saveConversation(); setHeaderMenu(undefined) }} disabled={saveState !== 'idle'}>{saveState === 'saving' ? 'Saving…' : saveState === 'saved' ? 'Saved to resources' : saveState === 'error' ? 'Save failed' : <>Save conversation <BookmarkPlus size={13}/></>}</button>}
+      {discordInvite && <a className="flex w-full items-center gap-2 rounded border-0 bg-transparent px-2 py-2 text-left hover:bg-stone-100" href={discordInvite} target="_blank" rel="noreferrer" onClick={() => setHeaderMenu(undefined)}>Join Discord server <ExternalLink size={13} /></a>}
+      {!discordInvite && discordAuthorization && <a className="flex w-full items-center gap-2 rounded border-0 bg-transparent px-2 py-2 text-left hover:bg-stone-100" href={discordAuthorization} target="_blank" rel="noreferrer" onClick={() => setHeaderMenu(undefined)}>Join Discord server <ExternalLink size={13} /></a>}
+      {canModerate && <button className="flex w-full items-center gap-2 rounded border-0 bg-transparent px-2 py-2 text-left hover:bg-stone-100" onClick={() => { void saveConversation(); setHeaderMenu(undefined) }} disabled={saveState !== 'idle'}>{saveState === 'saving' ? 'Saving…' : saveState === 'saved' ? 'Saved to resources' : saveState === 'error' ? 'Save failed' : <>Save conversation <BookmarkPlus size={13} /></>}</button>}
       <button className="flex w-full items-center gap-2 rounded border-0 bg-transparent px-2 py-2 text-left hover:bg-stone-100" onClick={() => { setConnectOpen(true); setHeaderMenu(undefined) }}>Change channel</button>
     </div>, document.body)}
   </div>
@@ -414,7 +414,7 @@ function activeCanvas() {
 function renderEmoji(emoji: string) {
   try { emoji = decodeURIComponent(emoji) } catch { /* Keep malformed identifiers visible. */ }
   const custom = emoji.match(/^[^:]+:(\d+)$/)
-  return custom ? <img className="size-3.5" src={'https://cdn.discordapp.com/emojis/' + custom[1] + '.webp?size=32'} alt={emoji.split(':')[0]}/> : emoji
+  return custom ? <img className="size-3.5" src={'https://cdn.discordapp.com/emojis/' + custom[1] + '.webp?size=32'} alt={emoji.split(':')[0]} /> : emoji
 }
 
 function renderAttachment(attachment: Message['attachments'][number]) {
@@ -423,11 +423,11 @@ function renderAttachment(attachment: Message['attachments'][number]) {
     || hasImageExtension(attachment.url)
   if (image) {
     return <a className="mt-1 block w-fit max-w-full" href={attachment.url} target="_blank" rel="noreferrer" key={attachment.id}>
-      <img className="max-h-56 max-w-full rounded-lg border border-stone-200 object-contain" src={attachment.url} alt={attachment.name}/>
-      <span className="mt-0.5 flex items-center gap-1 text-[8px] text-stone-400">{attachment.name}<ExternalLink size={8}/></span>
+      <img className="max-h-56 max-w-full rounded-lg border border-stone-200 object-contain" src={attachment.url} alt={attachment.name} />
+      <span className="mt-0.5 flex items-center gap-1 text-[8px] text-stone-400">{attachment.name}<ExternalLink size={8} /></span>
     </a>
   }
-  return <a className="mr-1 inline-flex items-center gap-1 text-[9px] text-emerald-800 underline" href={attachment.url} target="_blank" rel="noreferrer" key={attachment.id}>{attachment.name}<ExternalLink size={9}/></a>
+  return <a className="mr-1 inline-flex items-center gap-1 text-[9px] text-emerald-800 underline" href={attachment.url} target="_blank" rel="noreferrer" key={attachment.id}>{attachment.name}<ExternalLink size={9} /></a>
 }
 
 function hasImageExtension(value: string) {
