@@ -9,8 +9,8 @@ type MobilePanel = 'left' | 'center' | 'right'
 
 export default function App() {
   const [mobilePanel, setMobilePanel] = useState<MobilePanel>(() => new URL(window.location.href).searchParams.has('discordConnect') || window.location.hash.startsWith('#discord-message-') ? 'right' : 'center')
-  const [leftOpen, setLeftOpen] = useState(true)
-  const [rightOpen, setRightOpen] = useState(true)
+  const [leftOpen, setLeftOpen] = useState(() => storedPanelState('fieldnotes:left-panel-open', true))
+  const [rightOpen, setRightOpen] = useState(() => storedPanelState('fieldnotes:right-panel-open', true))
   const [leftWidth, setLeftWidth] = useState(() => storedPanelWidth('fieldnotes:left-panel-width', 340))
   const [rightWidth, setRightWidth] = useState(() => storedPanelWidth('fieldnotes:right-panel-width', 360))
 
@@ -70,6 +70,9 @@ export default function App() {
 
   useEffect(() => { localStorage.setItem('fieldnotes:left-panel-width', String(leftWidth)) }, [leftWidth])
   useEffect(() => { localStorage.setItem('fieldnotes:right-panel-width', String(rightWidth)) }, [rightWidth])
+  useEffect(() => { localStorage.setItem('fieldnotes:left-panel-open', String(leftOpen)) }, [leftOpen])
+  useEffect(() => { localStorage.setItem('fieldnotes:right-panel-open', String(rightOpen)) }, [rightOpen])
+  useEffect(() => { window.dispatchEvent(new CustomEvent('fieldnotes:panels-changed', { detail: { leftOpen, rightOpen } })) }, [leftOpen, rightOpen])
 
   const panelStyle = { '--left-panel-width': `${leftWidth}px`, '--right-panel-width': `${rightWidth}px` } as CSSProperties
   return <div className={`app-shell ${leftOpen ? '' : 'left-collapsed'} ${rightOpen ? '' : 'right-collapsed'}`} data-mobile-panel={mobilePanel} style={panelStyle}>
@@ -92,4 +95,9 @@ export default function App() {
 function storedPanelWidth(key: string, fallback: number) {
   const value = Number(localStorage.getItem(key))
   return Number.isFinite(value) ? Math.max(280, Math.min(520, value)) : fallback
+}
+
+function storedPanelState(key: string, fallback: boolean) {
+  const value = localStorage.getItem(key)
+  return value === 'true' ? true : value === 'false' ? false : fallback
 }
