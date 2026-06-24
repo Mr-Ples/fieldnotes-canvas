@@ -20,7 +20,10 @@ let lastGatewayMessage: { messageId: string; channelId: string; at: string } | n
 let lastForward: { messageId: string; result?: unknown; error?: string; at: string } | null = null
 
 const client = new Client({
-  intents: [GatewayIntentBits.Guilds, GatewayIntentBits.GuildMessages, GatewayIntentBits.MessageContent],
+  intents: [
+    GatewayIntentBits.Guilds, GatewayIntentBits.GuildMessages, GatewayIntentBits.MessageContent,
+    GatewayIntentBits.GuildMessageReactions, GatewayIntentBits.GuildMessageTyping,
+  ],
   partials: [Partials.Channel, Partials.Message],
 })
 
@@ -66,6 +69,45 @@ client.on(Events.MessageDelete, async (message) => {
   if (!message.guildId) return
   await sendMessageEvent('MESSAGE_DELETE', message)
 })
+
+client.on(Events.MessageReactionAdd, async (reaction, user) => {
+  if (user.bot) return
+  if (reaction.partial) await reaction.fetch()
+  await sendReactionEvent('REACTION_ADD', reaction.message.id, reaction.message.channelId, reaction.message.guildId, reactionEmoji(reaction.emoji), user.id)
+})
+
+client.on(Events.MessageReactionRemove, async (reaction, user) => {
+  if (user.bot) return
+  if (reaction.partial) await reaction.fetch()
+  await sendReactionEvent('REACTION_REMOVE', reaction.message.id, reaction.message.channelId, reaction.message.guildId, reactionEmoji(reaction.emoji), user.id)
+})
+
+client.on(Events.TypingStart, async (typing) => {
+  if (!typing.guild || typing.user.bot) return
+  try {
+    await post('/api/internal/discord/events', {
+      type: 'TYPING_START', messageId: 'typing', channelId: typing.channel.id, guildId: typing.guild.id,
+      userId: typing.user.id, userName: typing.member?.displayName ?? typing.user.globalName ?? typing.user.username,
+    })
+  } catch (error) {
+    console.error(JSON.stringify({ event: 'discord_typing_failed', channelId: typing.channel.id, error: error instanceof Error ? error.message : 'Unknown error' }))
+  }
+})
+
+async function sendReactionEvent(type: 'REACTION_ADD' | 'REACTION_REMOVE', messageId: string, channelId: string, guildId: string | null, emoji: string, userId: string) {
+  try {
+    await post('/api/internal/discord/events', { type, messageId, channelId, guildId: guildId ?? undefined, emoji, userId })
+  } catch (error) {
+    console.error(JSON.stringify({ event: 'discord_reaction_failed', type, messageId, error: error instanceof Error ? error.message : 'Unknown error' }))
+  }
+}
+
+function reactionEmoji(emoji: { id: string | null; name: string | null; identifier: string }) {
+  if (emoji.id && emoji.name) return emoji.name + ':' + emoji.id
+  if (emoji.name) return emoji.name
+  try { return decodeURIComponent(emoji.identifier) }
+  catch { return emoji.identifier }
+}
 
 async function sendMessageEvent(type: 'MESSAGE_CREATE' | 'MESSAGE_UPDATE' | 'MESSAGE_DELETE', message: Message | PartialMessage) {
   try {

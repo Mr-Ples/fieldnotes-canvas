@@ -6,7 +6,10 @@ const JSON_HEADERS = { 'content-type': 'application/json; charset=utf-8', 'cache
 const MAX_JSON_BYTES = 64_000
 
 type IncomingMessage = { role: 'user' | 'assistant'; content: string }
-type DiscordQueueMessage = { canvasId: string; messageId: string; channelId: string; content: string; authorName: string; replyToDiscordId?: string }
+type DiscordQueueMessage =
+  | { type: 'message'; canvasId: string; messageId: string; channelId: string; content: string; authorName: string; authorAvatar?: string; attachments: Array<{ name: string; url: string; contentType?: string }>; replyToDiscordId?: string }
+  | { type: 'reaction'; channelId: string; discordMessageId: string; emoji: string; active: boolean }
+  | { type: 'typing'; channelId: string }
 
 export default {
   async fetch(request, env, ctx): Promise<Response> {
@@ -41,6 +44,8 @@ export default {
       const discordChannels = url.pathname.match(/^\/api\/discord\/connect\/guilds\/(\d{15,22})\/channels$/)
       if (discordChannels && request.method === 'GET') return await discordGuildChannels(request, env, discordChannels[1])
       if (url.pathname === '/api/discord/connect/link' && request.method === 'POST') return await linkDiscordFromBrowser(request, env)
+      const reactionRoute = url.pathname.match(/^\/api\/canvases\/([^/]+)\/messages\/([0-9a-f-]{36})\/reactions$/)
+      if (reactionRoute && request.method === 'POST') return await canvasReaction(request, env, decodeURIComponent(reactionRoute[1]), reactionRoute[2], actor)
       const canvasRoute = url.pathname.match(/^\/api\/canvases\/([^/]+)\/(messages|chat)$/)
       if (canvasRoute) return await canvasChat(request, env, decodeURIComponent(canvasRoute[1]), canvasRoute[2], actor)
       if (url.pathname === '/api/internal/discord/link' && request.method === 'POST') return await linkDiscordChannel(request, env)
@@ -57,16 +62,44 @@ export default {
     for (const item of batch.messages) {
       const job = item.body as DiscordQueueMessage
       try {
-        const response = await fetch(`https://discord.com/api/v10/channels/${encodeURIComponent(job.channelId)}/messages`, {
+        if (job.type === 'typing') {
+          const response = await discordFetch(env, `/channels/${job.channelId}/typing`, { method: 'POST' })
+          if (!response.ok) throw new Error(`Discord typing returned ${response.status}`)
+          item.ack(); continue
+        }
+        if (job.type === 'reaction') {
+          const response = await discordFetch(env, `/channels/${job.channelId}/messages/${job.discordMessageId}/reactions/${encodeURIComponent(job.emoji)}/@me`, { method: job.active ? 'PUT' : 'DELETE' })
+          if (!response.ok) throw new Error(`Discord reaction returned ${response.status}`)
+          item.ack(); continue
+        }
+        const webhook = await ensureDiscordWebhook(env, job.channelId)
+        const target = new URL(`https://discord.com/api/v10/webhooks/${webhook.id}/${webhook.token}`)
+        target.searchParams.set('wait', 'true')
+        if (webhook.threadId) target.searchParams.set('thread_id', webhook.threadId)
+        const form = new FormData()
+        const payload = {
+          content: job.content,
+          username: job.authorName.slice(0, 80), avatar_url: job.authorAvatar,
+          allowed_mentions: { parse: [] },
+          attachments: job.attachments.map((attachment, id) => ({ id, filename: attachment.name })),
+        }
+        form.set('payload_json', JSON.stringify(payload))
+        for (const [index, attachment] of job.attachments.entries()) {
+          const file = await fetch(attachment.url, { signal: AbortSignal.timeout(15_000) })
+          if (!file.ok) throw new Error(`Attachment download returned ${file.status}`)
+          const size = Number(file.headers.get('content-length') ?? 0)
+          if (!size || size > 10_000_000) throw new Error('Discord attachments must expose a size and be at most 10 MB')
+          form.set(`files[${index}]`, await file.blob(), attachment.name)
+        }
+        const response = await fetch(target, {
           method: 'POST',
-          headers: { authorization: `Bot ${env.DISCORD_BOT_TOKEN}`, 'content-type': 'application/json' },
-          body: JSON.stringify({
-            content: `**${job.authorName.replaceAll('*', '')}**\n${job.content}`.slice(0, 2_000),
-            allowed_mentions: { parse: [] },
-            message_reference: job.replyToDiscordId ? { message_id: job.replyToDiscordId, fail_if_not_exists: false } : undefined,
-          }),
+          body: form,
           signal: AbortSignal.timeout(15_000),
         })
+        if (response.status === 404) {
+          await env.DISCORD_CHANNELS.getByName(job.channelId).clearWebhook()
+          throw new Error('Discord webhook was removed; it will be recreated')
+        }
         if (response.status === 429) {
           const delaySeconds = Math.max(1, Math.ceil(Number(response.headers.get('retry-after') ?? 1)))
           item.retry({ delaySeconds: Math.min(delaySeconds, 86_400) })
@@ -83,9 +116,10 @@ export default {
         await env.CANVAS_ROOMS.getByName(job.canvasId).markDelivered(job.messageId, result.id)
         item.ack()
       } catch (error) {
-        console.error(JSON.stringify({ event: 'discord_delivery_failed', messageId: job.messageId, error: error instanceof Error ? error.message : 'Unknown error' }))
-        if (item.attempts >= 5) {
-          await env.CANVAS_ROOMS.getByName(job.canvasId).markFailed(job.messageId)
+        console.error(JSON.stringify({ event: 'discord_delivery_failed', messageId: job.type === 'message' ? job.messageId : undefined, jobType: job.type, error: error instanceof Error ? error.message : 'Unknown error' }))
+        if (job.type === 'typing') item.ack()
+        else if (item.attempts >= 5) {
+          if (job.type === 'message') await env.CANVAS_ROOMS.getByName(job.canvasId).markFailed(job.messageId)
           item.ack()
         } else item.retry({ delaySeconds: Math.min(60, 2 ** item.attempts) })
       }
@@ -93,12 +127,57 @@ export default {
   },
 } satisfies ExportedHandler<Env>
 
+async function discordFetch(env: Env, path: string, init: RequestInit = {}) {
+  const headers = new Headers(init.headers)
+  headers.set('authorization', 'Bot ' + env.DISCORD_BOT_TOKEN)
+  return await fetch('https://discord.com/api/v10' + path, { ...init, headers, signal: init.signal ?? AbortSignal.timeout(15_000) })
+}
+
+async function ensureDiscordWebhook(env: Env, channelId: string) {
+  const store = env.DISCORD_CHANNELS.getByName(channelId)
+  const saved = await store.getWebhook()
+  if (saved) return saved
+  const channelResponse = await discordFetch(env, '/channels/' + channelId)
+  if (!channelResponse.ok) throw new Error('Discord channel returned ' + channelResponse.status)
+  const channel = JSON.parse(await readBoundedText(channelResponse, 64_000)) as DiscordChannel
+  const threadId = [10, 11, 12].includes(channel.type) ? channel.id : undefined
+  const webhookChannelId = threadId ? channel.parent_id : channel.id
+  if (!webhookChannelId) throw new Error('Discord thread has no parent channel')
+  const listResponse = await discordFetch(env, '/channels/' + webhookChannelId + '/webhooks')
+  if (listResponse.status === 403) throw new DiscordWebhookPermissionError()
+  if (!listResponse.ok) throw new Error('Discord webhooks returned ' + listResponse.status)
+  const webhooks = JSON.parse(await readBoundedText(listResponse, 256_000)) as Array<{ id: string; token?: string; name?: string }>
+  let webhook = webhooks.find((candidate) => candidate.name === 'Fieldnotes Relay' && candidate.token)
+  if (!webhook) {
+    const createResponse = await discordFetch(env, '/channels/' + webhookChannelId + '/webhooks', {
+      method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ name: 'Fieldnotes Relay' }),
+    })
+    if (createResponse.status === 403) throw new DiscordWebhookPermissionError()
+    if (!createResponse.ok) throw new Error('Discord webhook creation returned ' + createResponse.status)
+    webhook = JSON.parse(await readBoundedText(createResponse, 64_000)) as { id: string; token?: string }
+  }
+  if (!webhook.token) throw new Error('Discord webhook token was unavailable')
+  const value = { id: webhook.id, token: webhook.token, threadId }
+  await store.setWebhook(value)
+  return value
+}
+
+class DiscordWebhookPermissionError extends Error {
+  constructor() {
+    super('The Fieldnotes bot needs permission to manage webhooks in this channel.')
+    this.name = 'DiscordWebhookPermissionError'
+  }
+}
+
 async function canvasChat(request: Request, env: Env, canvasId: string, action: string, actor: string) {
   if (!/^[a-zA-Z0-9_-]{1,100}$/.test(canvasId)) return json({ error: 'Invalid canvas' }, 400)
   const room = env.CANVAS_ROOMS.getByName(canvasId)
   if (action === 'chat') {
     if (request.headers.get('upgrade')?.toLowerCase() !== 'websocket') return json({ error: 'Expected WebSocket' }, 426)
-    return room.fetch(request)
+    const identity = await websiteIdentity(request, env, actor)
+    const headers = new Headers(request.headers)
+    headers.set('x-fieldnotes-author-name', encodeURIComponent(identity.authorName))
+    return room.fetch(new Request(request, { headers }))
   }
   if (request.method === 'GET') {
     const before = Number(new URL(request.url).searchParams.get('before')) || undefined
@@ -106,25 +185,48 @@ async function canvasChat(request: Request, env: Env, canvasId: string, action: 
     return json({ messages, discord })
   }
   if (request.method !== 'POST') return json({ error: 'Method not allowed' }, 405)
-  const body = await readJson<{ content?: string; replyTo?: string }>(request)
+  const body = await readJson<{ content?: string; replyTo?: string; attachments?: Array<{ id?: string; name?: string; url?: string; contentType?: string }> }>(request)
   const content = body.content?.trim()
-  if (!content || content.length > 2_000) return json({ error: 'Message must be between 1 and 2,000 characters' }, 400)
+  const attachments = (body.attachments ?? []).filter((item) => item.id && item.name && item.url && allowedMediaUrl(item.url, env)).slice(0, 10) as Array<{ id: string; name: string; url: string; contentType?: string }>
+  if ((!content && !attachments.length) || (content?.length ?? 0) > 2_000) return json({ error: 'Add a message or attachment (message limit: 2,000 characters)' }, 400)
   const identity = await websiteIdentity(request, env, actor)
-  const message = await room.postWebsite({ ...identity, content, replyTo: body.replyTo })
+  const message = await room.postWebsite({ ...identity, content: content ?? '', replyTo: body.replyTo, attachments })
   if (message.discordChannelId) {
     let replyToDiscordId: string | undefined
     if (message.replyTo) {
       const recent = await room.listMessages(100)
       replyToDiscordId = recent.find((candidate) => candidate.id === message.replyTo)?.discordMessageId
     }
-    await env.DISCORD_OUTBOUND.send({ canvasId, messageId: message.id, channelId: message.discordChannelId, content, authorName: message.authorName, replyToDiscordId } satisfies DiscordQueueMessage)
+    await env.DISCORD_OUTBOUND.send({ type: 'message', canvasId, messageId: message.id, channelId: message.discordChannelId, content: content ?? '', authorName: message.authorName, authorAvatar: message.authorAvatar, attachments, replyToDiscordId } satisfies DiscordQueueMessage)
   }
   return json({ message }, 201)
+}
+
+async function canvasReaction(request: Request, env: Env, canvasId: string, messageId: string, actor: string) {
+  if (!/^[a-zA-Z0-9_-]{1,100}$/.test(canvasId)) return json({ error: 'Invalid canvas' }, 400)
+  const body = await readJson<{ emoji?: string }>(request)
+  const emoji = body.emoji?.trim()
+  if (!emoji || emoji.length > 100) return json({ error: 'Invalid reaction' }, 400)
+  const identity = await websiteIdentity(request, env, actor)
+  const result = await env.CANVAS_ROOMS.getByName(canvasId).toggleWebsiteReaction(messageId, emoji, identity.authorId)
+  if (!result) return json({ error: 'Message not found' }, 404)
+  if (result.message.discordChannelId && result.message.discordMessageId) {
+    await env.DISCORD_OUTBOUND.send({ type: 'reaction', channelId: result.message.discordChannelId, discordMessageId: result.message.discordMessageId, emoji, active: result.active } satisfies DiscordQueueMessage)
+  }
+  return json(result)
+}
+
+function allowedMediaUrl(value: string, env: Env) {
+  try {
+    const url = new URL(value)
+    return url.protocol === 'https:' && url.hostname === 'res.cloudinary.com' && url.pathname.startsWith('/' + env.CLOUDINARY_CLOUD_NAME + '/')
+  } catch { return false }
 }
 
 async function linkDiscordChannel(request: Request, env: Env) {
   const body = await verifiedBridgeJson<{ canvasId?: string; channelId?: string; guildId?: string }>(request, env)
   if (!body.canvasId || !body.channelId || !body.guildId || !/^[a-zA-Z0-9_-]{1,100}$/.test(body.canvasId) || !/^\d{15,22}$/.test(body.channelId) || !/^\d{15,22}$/.test(body.guildId)) return json({ error: 'Invalid link request' }, 400)
+  await ensureDiscordWebhook(env, body.channelId)
   await setDiscordMapping(env, body.canvasId, body.channelId, body.guildId)
   return json({ linked: true })
 }
@@ -256,6 +358,14 @@ async function linkDiscordFromBrowser(request: Request, env: Env) {
   if (!channelResponse.ok) return json({ error: 'The bot cannot access that channel' }, 403)
   const channel = JSON.parse(await readBoundedText(channelResponse, 64_000)) as DiscordChannel
   if (channel.guild_id !== body.guildId || ![0, 5, 10, 11, 12].includes(channel.type)) return json({ error: 'Invalid Discord channel' }, 400)
+  try {
+    await ensureDiscordWebhook(env, body.channelId)
+  } catch (error) {
+    if (error instanceof DiscordWebhookPermissionError) {
+      return json({ error: error.message, inviteUrl: discordBotInvite(env.DISCORD_CLIENT_ID, body.guildId), needsBotAuthorization: true }, 424)
+    }
+    throw error
+  }
   await setDiscordMapping(env, body.canvasId, body.channelId, body.guildId)
   return json({ linked: true })
 }
@@ -275,7 +385,7 @@ function canManageGuild(guild: DiscordGuild) {
 
 function discordBotInvite(clientId: string, guildId: string) {
   const url = new URL('https://discord.com/oauth2/authorize')
-  url.search = new URLSearchParams({ client_id: clientId, scope: 'bot applications.commands', permissions: '274878024704', guild_id: guildId, disable_guild_select: 'true' }).toString()
+  url.search = new URLSearchParams({ client_id: clientId, scope: 'bot applications.commands', permissions: '275414895680', guild_id: guildId, disable_guild_select: 'true' }).toString()
   return url.toString()
 }
 
@@ -306,7 +416,7 @@ type DiscordChannel = { id: string; guild_id?: string; name?: string | null; typ
 
 async function receiveDiscordEvent(request: Request, env: Env) {
   const event = await verifiedBridgeJson<DiscordEvent>(request, env)
-  if (!event.channelId || !event.messageId) return json({ error: 'Invalid Discord event' }, 400)
+  if (!event.channelId || (event.type !== 'TYPING_START' && !event.messageId)) return json({ error: 'Invalid Discord event' }, 400)
   const canvasId = await env.DISCORD_CHANNELS.getByName(event.channelId).getCanvas()
   if (!canvasId) return json({ ignored: true, reason: 'Channel is not linked' }, 202)
   await env.CANVAS_ROOMS.getByName(canvasId).ingestDiscord(event)

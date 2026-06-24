@@ -156,7 +156,11 @@ The slash command remains available as a fallback:
 
 Messages will now synchronize in both directions.
 
-You can type an ordinary message in the linked Discord channel or thread; the bot does not need to be mentioned. Messages from human Discord users are forwarded to the app. Messages created by bots and webhooks are intentionally ignored to prevent synchronization loops.
+You can type an ordinary message in the linked Discord channel or thread; the bot does not need to be mentioned. Messages, attachments, reactions, and typing indicators from human Discord users are forwarded to the app. Messages created by bots and webhooks are intentionally ignored to prevent synchronization loops.
+
+Site messages are delivered through a `Fieldnotes Relay` webhook so each message can use its Fieldnotes author's display name and avatar. The bot needs **Manage Webhooks**, **Add Reactions**, **Attach Files**, and its existing message permissions. Re-open the generated bot invite and authorize it again for servers that installed the bot before these permissions were added.
+
+The channel connection dialog creates and validates this webhook before saving the channel. If Discord rejects the required permissions, use **Authorize bot permissions** in that dialog, return to Fieldnotes, and select the channel again.
 
 For Discord → Fieldnotes synchronization, the bridge must remain running in a second terminal and display `discord_ready`:
 

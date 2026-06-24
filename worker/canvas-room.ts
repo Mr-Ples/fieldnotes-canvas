@@ -9,6 +9,7 @@ export type ChatMessage = {
   content: string
   replyTo?: string
   attachments: Array<{ id: string; name: string; url: string; contentType?: string }>
+  reactions: Array<{ emoji: string; count: number }>
   discordMessageId?: string
   discordChannelId?: string
   discordGuildId?: string
@@ -19,7 +20,7 @@ export type ChatMessage = {
 }
 
 export type DiscordEvent = {
-  type: 'MESSAGE_CREATE' | 'MESSAGE_UPDATE' | 'MESSAGE_DELETE'
+  type: 'MESSAGE_CREATE' | 'MESSAGE_UPDATE' | 'MESSAGE_DELETE' | 'REACTION_ADD' | 'REACTION_REMOVE' | 'TYPING_START'
   messageId: string
   channelId: string
   guildId?: string
@@ -30,6 +31,9 @@ export type DiscordEvent = {
   replyToDiscordId?: string
   attachments?: ChatMessage['attachments']
   timestamp?: number
+  emoji?: string
+  userId?: string
+  userName?: string
 }
 
 export class CanvasRoom extends DurableObject<Env> {
@@ -56,6 +60,12 @@ export class CanvasRoom extends DurableObject<Env> {
         );
         CREATE INDEX IF NOT EXISTS messages_created_at ON messages(created_at DESC);
         CREATE TABLE IF NOT EXISTS config (key TEXT PRIMARY KEY, value TEXT NOT NULL);
+        CREATE TABLE IF NOT EXISTS reactions (
+          message_id TEXT NOT NULL,
+          emoji TEXT NOT NULL,
+          user_id TEXT NOT NULL,
+          PRIMARY KEY (message_id, emoji, user_id)
+        );
       `)
     })
   }
@@ -65,13 +75,22 @@ export class CanvasRoom extends DurableObject<Env> {
     const pair = new WebSocketPair()
     const [client, server] = Object.values(pair)
     this.ctx.acceptWebSocket(server)
-    server.serializeAttachment({ connectedAt: Date.now() })
+    server.serializeAttachment({ connectedAt: Date.now(), authorName: decodeURIComponent(request.headers.get('x-fieldnotes-author-name') ?? 'Someone') })
     server.send(JSON.stringify({ type: 'ready', messages: await this.listMessages(50) }))
     return new Response(null, { status: 101, webSocket: client })
   }
 
   async webSocketMessage(ws: WebSocket, message: string | ArrayBuffer) {
-    if (typeof message === 'string' && message === 'ping') ws.send('pong')
+    if (typeof message !== 'string') return
+    if (message === 'ping') { ws.send('pong'); return }
+    try {
+      const payload = JSON.parse(message) as { type?: string }
+      if (payload.type !== 'typing') return
+      const authorName = (ws.deserializeAttachment() as { authorName?: string } | null)?.authorName ?? 'Someone'
+      this.broadcast({ type: 'typing', authorName }, ws)
+      const channel = await this.getDiscordChannel()
+      if (channel) await this.env.DISCORD_OUTBOUND.send({ type: 'typing', channelId: channel.channelId })
+    } catch { /* Ignore malformed client events. */ }
   }
 
   async webSocketClose(ws: WebSocket, code: number, reason: string) {
@@ -83,14 +102,14 @@ export class CanvasRoom extends DurableObject<Env> {
     const rows = before
       ? this.ctx.storage.sql.exec<MessageRow>('SELECT * FROM messages WHERE created_at < ? ORDER BY created_at DESC LIMIT ?', before, safeLimit).toArray()
       : this.ctx.storage.sql.exec<MessageRow>('SELECT * FROM messages ORDER BY created_at DESC LIMIT ?', safeLimit).toArray()
-    return rows.reverse().map(toMessage)
+    return rows.reverse().map((row) => toMessage(row, this.reactionsFor(row.id)))
   }
 
-  async postWebsite(input: { authorId: string; authorName: string; authorAvatar?: string; content: string; replyTo?: string }): Promise<ChatMessage> {
+  async postWebsite(input: { authorId: string; authorName: string; authorAvatar?: string; content: string; replyTo?: string; attachments?: ChatMessage['attachments'] }): Promise<ChatMessage> {
     const channel = await this.getDiscordChannel()
     const message: ChatMessage = {
       id: crypto.randomUUID(), origin: 'website', authorId: input.authorId, authorName: input.authorName,
-      authorAvatar: input.authorAvatar, content: input.content, replyTo: input.replyTo, attachments: [],
+      authorAvatar: input.authorAvatar, content: input.content, replyTo: input.replyTo, attachments: input.attachments ?? [], reactions: [],
       discordChannelId: channel?.channelId, discordGuildId: channel?.guildId, createdAt: Date.now(), deleted: false,
       syncStatus: channel ? 'pending' : 'unlinked',
     }
@@ -100,14 +119,31 @@ export class CanvasRoom extends DurableObject<Env> {
   }
 
   async ingestDiscord(event: DiscordEvent): Promise<void> {
+    if (event.type === 'TYPING_START') {
+      this.broadcast({ type: 'typing', authorName: event.userName ?? 'Someone' })
+      return
+    }
+    if (event.type === 'REACTION_ADD' || event.type === 'REACTION_REMOVE') {
+      if (!event.emoji || !event.userId) return
+      const emoji = normalizeEmoji(event.emoji)
+      const row = this.ctx.storage.sql.exec<MessageRow>('SELECT * FROM messages WHERE discord_message_id = ?', event.messageId).toArray()[0]
+      if (!row) return
+      if (event.type === 'REACTION_ADD') this.ctx.storage.sql.exec('INSERT OR IGNORE INTO reactions VALUES (?, ?, ?)', row.id, emoji, event.userId)
+      else {
+        this.ctx.storage.sql.exec('DELETE FROM reactions WHERE message_id = ? AND emoji = ? AND user_id = ?', row.id, emoji, event.userId)
+        if (emoji !== event.emoji) this.ctx.storage.sql.exec('DELETE FROM reactions WHERE message_id = ? AND emoji = ? AND user_id = ?', row.id, event.emoji, event.userId)
+      }
+      this.broadcast({ type: 'message', message: toMessage(row, this.reactionsFor(row.id)) })
+      return
+    }
     if (event.type === 'MESSAGE_DELETE') {
       const row = this.ctx.storage.sql.exec<MessageRow>('UPDATE messages SET deleted = 1, content = ?, edited_at = ? WHERE discord_message_id = ? RETURNING *', '', Date.now(), event.messageId).toArray()[0]
-      if (row) this.broadcast({ type: 'message', message: toMessage(row) })
+      if (row) this.broadcast({ type: 'message', message: toMessage(row, this.reactionsFor(row.id)) })
       return
     }
     if (event.type === 'MESSAGE_UPDATE') {
       const row = this.ctx.storage.sql.exec<MessageRow>('UPDATE messages SET content = ?, edited_at = ? WHERE discord_message_id = ? RETURNING *', event.content ?? '', Date.now(), event.messageId).toArray()[0]
-      if (row) this.broadcast({ type: 'message', message: toMessage(row) })
+      if (row) this.broadcast({ type: 'message', message: toMessage(row, this.reactionsFor(row.id)) })
       return
     }
     const existing = this.ctx.storage.sql.exec<MessageRow>('SELECT * FROM messages WHERE discord_message_id = ?', event.messageId).toArray()[0]
@@ -117,7 +153,7 @@ export class CanvasRoom extends DurableObject<Env> {
       : undefined
     const message: ChatMessage = {
       id: crypto.randomUUID(), origin: 'discord', authorId: event.authorId ?? 'discord', authorName: event.authorName ?? 'Discord user',
-      authorAvatar: event.authorAvatar, content: event.content ?? '', replyTo: reply, attachments: event.attachments ?? [],
+      authorAvatar: event.authorAvatar, content: event.content ?? '', replyTo: reply, attachments: event.attachments ?? [], reactions: [],
       discordMessageId: event.messageId, discordChannelId: event.channelId, discordGuildId: event.guildId,
       createdAt: event.timestamp ?? Date.now(), deleted: false, syncStatus: 'synced',
     }
@@ -142,12 +178,35 @@ export class CanvasRoom extends DurableObject<Env> {
 
   async markDelivered(id: string, discordMessageId: string): Promise<void> {
     const row = this.ctx.storage.sql.exec<MessageRow>("UPDATE messages SET discord_message_id = ?, sync_status = 'synced' WHERE id = ? RETURNING *", discordMessageId, id).toArray()[0]
-    if (row) this.broadcast({ type: 'message', message: toMessage(row) })
+    if (row) this.broadcast({ type: 'message', message: toMessage(row, this.reactionsFor(row.id)) })
   }
 
   async markFailed(id: string): Promise<void> {
     const row = this.ctx.storage.sql.exec<MessageRow>("UPDATE messages SET sync_status = 'failed' WHERE id = ? RETURNING *", id).toArray()[0]
-    if (row) this.broadcast({ type: 'message', message: toMessage(row) })
+    if (row) this.broadcast({ type: 'message', message: toMessage(row, this.reactionsFor(row.id)) })
+  }
+
+  async toggleWebsiteReaction(messageId: string, emoji: string, userId: string): Promise<{ message: ChatMessage; active: boolean } | null> {
+    const row = this.ctx.storage.sql.exec<MessageRow>('SELECT * FROM messages WHERE id = ?', messageId).toArray()[0]
+    if (!row) return null
+    const active = !this.ctx.storage.sql.exec<{ found: number }>('SELECT 1 AS found FROM reactions WHERE message_id = ? AND emoji = ? AND user_id = ?', messageId, emoji, userId).toArray()[0]
+    if (active) this.ctx.storage.sql.exec('INSERT OR IGNORE INTO reactions VALUES (?, ?, ?)', messageId, emoji, userId)
+    else this.ctx.storage.sql.exec('DELETE FROM reactions WHERE message_id = ? AND emoji = ? AND user_id = ?', messageId, emoji, userId)
+    const message = toMessage(row, this.reactionsFor(messageId))
+    this.broadcast({ type: 'message', message })
+    return { message, active }
+  }
+
+  private reactionsFor(messageId: string) {
+    const rows = this.ctx.storage.sql.exec<{ emoji: string; user_id: string }>('SELECT emoji, user_id FROM reactions WHERE message_id = ?', messageId).toArray()
+    const users = new Map<string, Set<string>>()
+    for (const row of rows) {
+      const emoji = normalizeEmoji(row.emoji)
+      const reacting = users.get(emoji) ?? new Set<string>()
+      reacting.add(row.user_id)
+      users.set(emoji, reacting)
+    }
+    return [...users].map(([emoji, reacting]) => ({ emoji, count: reacting.size }))
   }
 
   private insert(message: ChatMessage) {
@@ -157,9 +216,10 @@ export class CanvasRoom extends DurableObject<Env> {
       message.discordGuildId ?? null, message.createdAt, message.editedAt ?? null, message.deleted ? 1 : 0, message.syncStatus)
   }
 
-  private broadcast(payload: unknown) {
+  private broadcast(payload: unknown, except?: WebSocket) {
     const encoded = JSON.stringify(payload)
     for (const socket of this.ctx.getWebSockets()) {
+      if (socket === except) continue
       try { socket.send(encoded) } catch { socket.close(1011, 'Delivery failed') }
     }
   }
@@ -171,6 +231,9 @@ export class DiscordChannelLink extends DurableObject<Env> {
   async clearCanvas(canvasId: string) {
     if (await this.getCanvas() === canvasId) await this.ctx.storage.delete('canvasId')
   }
+  async getWebhook() { return await this.ctx.storage.get<{ id: string; token: string; threadId?: string }>('webhook') ?? null }
+  async setWebhook(webhook: { id: string; token: string; threadId?: string }) { await this.ctx.storage.put('webhook', webhook) }
+  async clearWebhook() { await this.ctx.storage.delete('webhook') }
 }
 
 export type DiscordGuild = { id: string; name: string; icon?: string | null; owner: boolean; permissions: string }
@@ -210,12 +273,17 @@ type MessageRow = {
   deleted: number; sync_status: ChatMessage['syncStatus']
 }
 
-function toMessage(row: MessageRow): ChatMessage {
+function toMessage(row: MessageRow, reactions: ChatMessage['reactions'] = []): ChatMessage {
   return {
     id: row.id, origin: row.origin, authorId: row.author_id, authorName: row.author_name,
     authorAvatar: row.author_avatar ?? undefined, content: row.content, replyTo: row.reply_to ?? undefined,
-    attachments: JSON.parse(row.attachments) as ChatMessage['attachments'], discordMessageId: row.discord_message_id ?? undefined,
+    attachments: JSON.parse(row.attachments) as ChatMessage['attachments'], reactions, discordMessageId: row.discord_message_id ?? undefined,
     discordChannelId: row.discord_channel_id ?? undefined, discordGuildId: row.discord_guild_id ?? undefined,
     createdAt: row.created_at, editedAt: row.edited_at ?? undefined, deleted: Boolean(row.deleted), syncStatus: row.sync_status,
   }
+}
+
+function normalizeEmoji(emoji: string) {
+  try { return decodeURIComponent(emoji) }
+  catch { return emoji }
 }

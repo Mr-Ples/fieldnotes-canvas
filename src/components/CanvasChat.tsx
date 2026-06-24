@@ -1,13 +1,15 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { Check, Copy, ExternalLink, MessageCircleReply, RefreshCw, Send, Unplug } from 'lucide-react'
+import { Check, Copy, ExternalLink, MessageCircleReply, Paperclip, RefreshCw, Send, Unplug } from 'lucide-react'
 import { Virtuoso, type VirtuosoHandle } from 'react-virtuoso'
 import { getDeviceId, getGuestName } from '../services/api'
 import DiscordConnectModal from './DiscordConnectModal'
 import DiscordIdentity, { type DiscordUser } from './DiscordIdentity'
+import { CloudinaryMediaStorage, type StoredMedia } from '../services/media'
 
 type Message = {
   id: string; origin: 'website' | 'discord'; authorId: string; authorName: string; authorAvatar?: string;
   content: string; replyTo?: string; attachments: Array<{ id: string; name: string; url: string; contentType?: string }>;
+  reactions: Array<{ emoji: string; count: number }>;
   discordMessageId?: string; discordChannelId?: string; discordGuildId?: string; createdAt: number; editedAt?: number;
   deleted: boolean; syncStatus: 'local' | 'pending' | 'synced' | 'unlinked' | 'failed'
 }
@@ -19,11 +21,20 @@ export default function CanvasChat() {
   const [replyTo, setReplyTo] = useState<Message>()
   const [connected, setConnected] = useState(false)
   const [sending, setSending] = useState(false)
+  const [uploads, setUploads] = useState<StoredMedia[]>([])
+  const [uploading, setUploading] = useState(false)
+  const [typingName, setTypingName] = useState('')
+  const [myReactions, setMyReactions] = useState(() => new Set<string>())
   const [error, setError] = useState('')
   const [discordLinked, setDiscordLinked] = useState(false)
   const [identity, setIdentity] = useState<DiscordUser | null>(null)
   const [connectOpen, setConnectOpen] = useState(() => new URL(window.location.href).searchParams.has('discordConnect'))
   const list = useRef<VirtuosoHandle>(null)
+  const socketRef = useRef<WebSocket | undefined>(undefined)
+  const typingSentAt = useRef(0)
+  const typingTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined)
+  const fileInput = useRef<HTMLInputElement>(null)
+  const storage = useRef(new CloudinaryMediaStorage())
   const byId = useMemo(() => new Map(messages.map((message) => [message.id, message])), [messages])
 
   useEffect(() => {
@@ -48,12 +59,18 @@ export default function CanvasChat() {
       const url = new URL(`/api/canvases/${encodeURIComponent(canvas.id)}/chat`, window.location.origin)
       url.protocol = url.protocol === 'https:' ? 'wss:' : 'ws:'
       socket = new WebSocket(url)
+      socketRef.current = socket
       socket.onopen = () => { attempts = 0; setConnected(true) }
       socket.onmessage = (event) => {
         if (event.data === 'pong') return
-        const payload = JSON.parse(event.data) as { type: string; message?: Message; messages?: Message[] }
+        const payload = JSON.parse(event.data) as { type: string; message?: Message; messages?: Message[]; authorName?: string }
         if (payload.messages) merge(payload.messages)
         if (payload.message) merge([payload.message])
+        if (payload.type === 'typing' && payload.authorName) {
+          setTypingName(payload.authorName)
+          clearTimeout(typingTimer.current)
+          typingTimer.current = setTimeout(() => setTypingName(''), 4_000)
+        }
       }
       socket.onclose = () => {
         setConnected(false)
@@ -67,25 +84,58 @@ export default function CanvasChat() {
       if (!disposed) { merge(result.messages); setDiscordLinked(Boolean(result.discord)) }
     }).catch((reason) => { if (!disposed) setError(reason instanceof Error ? reason.message : 'Could not load chat') })
     connect()
-    return () => { disposed = true; clearTimeout(retry); socket?.close() }
+    return () => { disposed = true; clearTimeout(retry); clearTimeout(typingTimer.current); socket?.close(); socketRef.current = undefined }
   }, [canvas.id])
 
   const send = async () => {
     const value = content.trim()
-    if (!value || sending) return
+    if ((!value && !uploads.length) || sending) return
     setSending(true); setError('')
     try {
       const response = await fetch(`/api/canvases/${encodeURIComponent(canvas.id)}/messages`, {
         method: 'POST', headers: { 'content-type': 'application/json', 'x-fieldnotes-device': getDeviceId() },
-        body: JSON.stringify({ content: value, replyTo: replyTo?.id }),
+        body: JSON.stringify({ content: value, replyTo: replyTo?.id, attachments: uploads.map((file) => ({ id: file.id, name: file.name, url: file.url })) }),
       })
       const result = await response.json() as { message?: Message; error?: string }
       if (!response.ok || !result.message) throw new Error(result.error ?? 'Could not send message')
       setMessages((current) => current.some((item) => item.id === result.message!.id) ? current : [...current, result.message!])
-      setContent(''); setReplyTo(undefined)
+      setContent(''); setReplyTo(undefined); setUploads([])
       requestAnimationFrame(() => list.current?.scrollToIndex({ index: 'LAST', behavior: 'smooth' }))
     } catch (reason) { setError(reason instanceof Error ? reason.message : 'Could not send message') }
     finally { setSending(false) }
+  }
+
+  const uploadFiles = async (files: FileList | null) => {
+    if (!files?.length || uploading) return
+    setUploading(true); setError('')
+    try {
+      if ([...files].some((file) => file.size > 10_000_000)) throw new Error('Discord attachments must be 10 MB or smaller')
+      const next: StoredMedia[] = []
+      for (const file of [...files].slice(0, Math.max(0, 10 - uploads.length))) next.push(await storage.current.upload(file))
+      setUploads((current) => [...current, ...next].slice(0, 10))
+    } catch (reason) { setError(reason instanceof Error ? reason.message : 'Upload failed') }
+    finally { setUploading(false); if (fileInput.current) fileInput.current.value = '' }
+  }
+
+  const announceTyping = () => {
+    const now = Date.now()
+    if (now - typingSentAt.current < 7_000 || socketRef.current?.readyState !== WebSocket.OPEN) return
+    typingSentAt.current = now
+    socketRef.current.send(JSON.stringify({ type: 'typing', authorName: identity?.displayName ?? getGuestName() }))
+  }
+
+  const react = async (message: Message, emoji: string) => {
+    const key = message.id + ':' + emoji
+    const active = !myReactions.has(key)
+    setMyReactions((current) => { const next = new Set(current); active ? next.add(key) : next.delete(key); return next })
+    const response = await fetch('/api/canvases/' + encodeURIComponent(canvas.id) + '/messages/' + message.id + '/reactions', {
+      method: 'POST', headers: { 'content-type': 'application/json', 'x-fieldnotes-device': getDeviceId() },
+      body: JSON.stringify({ emoji }),
+    })
+    const result = await response.json() as { message?: Message; active?: boolean; error?: string }
+    if (!response.ok || !result.message) { setError(result.error ?? 'Could not update reaction'); return }
+    setMyReactions((current) => { const next = new Set(current); result.active ? next.add(key) : next.delete(key); return next })
+    setMessages((current) => current.map((item) => item.id === result.message!.id ? result.message! : item))
   }
 
   return <div className="flex min-h-0 flex-1 flex-col">
@@ -103,7 +153,9 @@ export default function CanvasChat() {
             <div className="flex items-center gap-1.5"><strong className="truncate text-[10px]">{message.authorName}</strong>{message.origin === 'discord' && <span className="rounded bg-indigo-100 px-1 text-[7px] font-bold text-indigo-700">DISCORD</span>}<time className="text-[8px] text-stone-400">{new Date(message.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</time></div>
             {parent && <div className="mt-1 truncate border-l-2 border-stone-300 pl-2 text-[9px] text-stone-400">{parent.authorName}: {parent.content}</div>}
             <p className={`my-1 whitespace-pre-wrap font-serif text-xs leading-relaxed ${message.deleted ? 'italic text-stone-400' : 'text-stone-700'}`}>{message.deleted ? 'Message deleted' : message.content}</p>
-            {message.attachments.map((attachment) => <a className="mr-1 inline-flex items-center gap-1 text-[9px] text-emerald-800 underline" href={attachment.url} target="_blank" rel="noreferrer" key={attachment.id}>{attachment.name}<ExternalLink size={9}/></a>)}
+            {message.attachments.map(renderAttachment)}
+            <div className="my-1 flex flex-wrap gap-1">{(message.reactions ?? []).map((reaction) => <button key={reaction.emoji} className={'flex items-center gap-1 rounded-full border px-1.5 py-0.5 text-[9px] ' + (myReactions.has(message.id + ':' + reaction.emoji) ? 'border-indigo-300 bg-indigo-50' : 'border-stone-200 bg-white')} onClick={() => void react(message, reaction.emoji)}>{renderEmoji(reaction.emoji)} {reaction.count}</button>)}</div>
+            <div className="invisible mb-1 flex gap-1 group-hover:visible">{['👍', '❤️', '😂', '🎉'].filter((emoji) => !(message.reactions ?? []).some((item) => item.emoji === emoji)).map((emoji) => <button className="border-0 bg-transparent p-0 text-[10px]" key={emoji} onClick={() => void react(message, emoji)}>{emoji}</button>)}</div>
             <div className="flex items-center gap-2"><button className="invisible flex items-center gap-1 border-0 bg-transparent p-0 text-[8px] text-stone-500 group-hover:visible" onClick={() => setReplyTo(message)}><MessageCircleReply size={10}/> Reply</button>{message.origin === 'website' && <span className={`text-[8px] ${message.syncStatus === 'failed' ? 'text-red-600' : 'text-stone-400'}`}>{message.syncStatus === 'unlinked' ? 'Site only' : message.syncStatus === 'pending' ? 'Sending to Discord…' : message.syncStatus === 'failed' ? 'Discord delivery failed' : 'Synced'}</span>}</div>
           </div>
         </div>
@@ -111,13 +163,15 @@ export default function CanvasChat() {
     }}/>
     {replyTo && <div className="flex items-center justify-between border-t border-rule bg-stone-100 px-3 py-1.5 text-[9px] text-stone-500"><span className="truncate">Replying to {replyTo.authorName}: {replyTo.content}</span><button className="border-0 bg-transparent" onClick={() => setReplyTo(undefined)}>×</button></div>}
     {error && <div role="alert" className="flex items-center gap-1 px-3 py-1 text-[9px] text-red-700"><Unplug size={10}/>{error}</div>}
+    <div className="min-h-4 px-3 text-[9px] italic text-stone-400">{typingName ? typingName + ' is typing…' : ''}</div>
     <div className="flex items-center justify-between border-t border-rule px-3 pt-2">
       <span className="text-[9px] text-stone-400">Posting as {identity?.displayName ?? getGuestName()}</span>
       <DiscordIdentity compact onChange={setIdentity}/>
     </div>
     <form className="m-3 mt-2 rounded-lg border border-stone-300 bg-white p-2" onSubmit={(event) => { event.preventDefault(); void send() }}>
-      <textarea className="h-14 w-full resize-none border-0 bg-transparent text-[11px] outline-none" maxLength={2000} placeholder="Message this canvas and Discord…" value={content} onChange={(event) => setContent(event.target.value)}/>
-      <div className="flex items-center justify-between"><span className="text-[8px] text-stone-400">{content.length}/2000</span><button className="grid size-7 place-items-center rounded-md border-0 bg-forest text-white disabled:opacity-40" disabled={!content.trim() || sending} aria-label="Send message"><Send size={13}/></button></div>
+      <textarea className="h-14 w-full resize-none border-0 bg-transparent text-[11px] outline-none" maxLength={2000} placeholder="Message this canvas and Discord…" value={content} onChange={(event) => { setContent(event.target.value); announceTyping() }}/>
+      {uploads.length > 0 && <div className="mb-1 flex flex-wrap gap-1">{uploads.map((file) => <button type="button" className="rounded bg-stone-100 px-1.5 py-1 text-[8px]" key={file.id} onClick={() => setUploads((current) => current.filter((item) => item.id !== file.id))}>{file.name} ×</button>)}</div>}
+      <div className="flex items-center justify-between"><span className="text-[8px] text-stone-400">{content.length}/2000</span><div className="flex items-center gap-1"><input ref={fileInput} type="file" multiple hidden onChange={(event) => void uploadFiles(event.target.files)}/><button type="button" className="grid size-7 place-items-center rounded-md border-0 bg-stone-100 text-stone-600 disabled:opacity-40" disabled={uploading || uploads.length >= 10} onClick={() => fileInput.current?.click()} aria-label="Attach files"><Paperclip size={13}/></button><button className="grid size-7 place-items-center rounded-md border-0 bg-forest text-white disabled:opacity-40" disabled={(!content.trim() && !uploads.length) || sending || uploading} aria-label="Send message"><Send size={13}/></button></div></div>
     </form>
     <DiscordConnectModal canvasId={canvas.id} open={connectOpen} onClose={() => setConnectOpen(false)} onLinked={() => setDiscordLinked(true)}/>
   </div>
@@ -126,4 +180,28 @@ export default function CanvasChat() {
 function activeCanvas() {
   const stored = localStorage.getItem('fieldnotes:active-canvas')
   return stored ? JSON.parse(stored) as { id: string; title: string } : { id: 'attention', title: 'Designing for attention' }
+}
+
+function renderEmoji(emoji: string) {
+  try { emoji = decodeURIComponent(emoji) } catch { /* Keep malformed identifiers visible. */ }
+  const custom = emoji.match(/^[^:]+:(\d+)$/)
+  return custom ? <img className="size-3.5" src={'https://cdn.discordapp.com/emojis/' + custom[1] + '.webp?size=32'} alt={emoji.split(':')[0]}/> : emoji
+}
+
+function renderAttachment(attachment: Message['attachments'][number]) {
+  const image = attachment.contentType?.startsWith('image/')
+    || attachment.id.startsWith('image:')
+    || hasImageExtension(attachment.url)
+  if (image) {
+    return <a className="mt-1 block w-fit max-w-full" href={attachment.url} target="_blank" rel="noreferrer" key={attachment.id}>
+      <img className="max-h-56 max-w-full rounded-lg border border-stone-200 object-contain" src={attachment.url} alt={attachment.name}/>
+      <span className="mt-0.5 flex items-center gap-1 text-[8px] text-stone-400">{attachment.name}<ExternalLink size={8}/></span>
+    </a>
+  }
+  return <a className="mr-1 inline-flex items-center gap-1 text-[9px] text-emerald-800 underline" href={attachment.url} target="_blank" rel="noreferrer" key={attachment.id}>{attachment.name}<ExternalLink size={9}/></a>
+}
+
+function hasImageExtension(value: string) {
+  try { return /\.(avif|gif|jpe?g|png|webp)$/i.test(new URL(value).pathname) }
+  catch { return false }
 }
