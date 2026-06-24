@@ -145,6 +145,7 @@ export default function CanvasChat() {
     element.style.height = 'auto'
     const height = Math.min(160, Math.max(56, element.scrollHeight))
     element.style.height = height + 'px'
+    element.style.overflowY = element.scrollHeight > 160 ? 'auto' : 'hidden'
   }, [content])
 
   useEffect(() => {
@@ -382,7 +383,7 @@ export default function CanvasChat() {
         <div className="flex gap-2">
           {message.authorAvatar ? <img src={message.authorAvatar} alt="" className="size-7 rounded-full" /> : <span className="avatar avatar-sage">{message.authorName.slice(0, 2).toUpperCase()}</span>}
           <div className="min-w-0 flex-1">
-            <div className="flex items-center gap-1.5"><strong className="truncate text-[10px]">{message.authorName}</strong>{message.origin === 'discord' && <span className="rounded bg-indigo-100 px-1 text-[7px] font-bold text-indigo-700">DISCORD</span>}<time className="text-[8px] text-stone-400">{new Date(message.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</time></div>
+            <div className="flex items-center gap-1.5"><strong className="truncate text-[10px]">{message.authorName}</strong>{message.origin === 'discord' && <span className="rounded bg-indigo-100 px-1 text-[7px] font-bold text-indigo-700">DISCORD</span>}<time className="text-[8px] text-stone-400">{new Date(message.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</time>{message.origin === 'website' && message.syncStatus !== 'synced' && <span className={`text-[8px] ${message.syncStatus === 'failed' ? 'text-red-600' : 'text-stone-400'}`}>· {message.syncStatus === 'unlinked' ? 'Site only' : message.syncStatus === 'pending' ? 'Syncing…' : 'Discord delivery failed'}</span>}</div>
             <p className="my-1 whitespace-pre-wrap font-serif text-xs leading-relaxed text-stone-700">{message.content}</p>
             {message.attachments.map(renderAttachment)}
             <div className="my-1 flex flex-wrap gap-1">{(message.reactions ?? []).map((reaction) => <button key={reaction.emoji} aria-label={reaction.emoji + ' reaction'} className={'flex items-center gap-1 rounded-full border px-1.5 py-0.5 text-[9px] ' + (myReactions.has(message.id + ':' + reaction.emoji) ? 'border-indigo-300 bg-indigo-50' : 'border-stone-200 bg-white')} onMouseEnter={(event) => {
@@ -395,7 +396,6 @@ export default function CanvasChat() {
                 left: Math.max(8, Math.min(window.innerWidth - 240, rect.left)),
               })
             }} onMouseLeave={() => setReactionHover(undefined)} onClick={() => void react(message, reaction.emoji)}>{renderEmoji(reaction.emoji)} {reaction.count}</button>)}</div>
-            {message.origin === 'website' && message.syncStatus !== 'synced' && <div className={`text-[8px] ${message.syncStatus === 'failed' ? 'text-red-600' : 'text-stone-400'}`}>{message.syncStatus === 'unlinked' ? 'Site only' : message.syncStatus === 'pending' ? 'Syncing…' : 'Discord delivery failed'}</div>}
           </div>
         </div>
       </article>
@@ -408,7 +408,7 @@ export default function CanvasChat() {
     </div>
     <form className="m-3 mt-2 rounded-lg border border-stone-300 bg-white p-2" onSubmit={(event) => { event.preventDefault(); void send() }}>
       {replyTo && <div className="-mx-2 -mt-2 mb-2 flex items-center gap-2 rounded-t-lg border-b border-stone-200 bg-stone-50 px-2 py-1.5 text-[9px]">{replyTo.authorAvatar ? <img className="size-5 rounded-full" src={replyTo.authorAvatar} alt="" /> : <span className="grid size-5 place-items-center rounded-full bg-stone-200 text-[7px]">{replyTo.authorName.slice(0, 2).toUpperCase()}</span>}<MessageCircleReply size={11} className="shrink-0 text-indigo-500" /><button type="button" className="min-w-0 flex-1 truncate border-0 bg-transparent text-left text-stone-500" onClick={() => jumpToMessage(replyTo.id)}>Replying to <strong className="text-stone-700">{replyTo.authorName}</strong> · {replyTo.content || 'Attachment'}</button><button type="button" className="grid size-5 place-items-center border-0 bg-transparent text-stone-400" onClick={() => setReplyTo(undefined)}>×</button></div>}
-      <textarea ref={composerRef} rows={1} className="w-full resize-none border-0 bg-transparent text-[11px] outline-none" style={{ overflowY: 'hidden' }} maxLength={2000} placeholder="Message this canvas and Discord…" value={content} onChange={(event) => { setContent(event.target.value); announceTyping() }} onKeyDown={handleKeyDown} />
+      <textarea ref={composerRef} rows={1} className="w-full resize-none border-0 bg-transparent text-[11px] outline-none" maxLength={2000} placeholder="Message this canvas and Discord…" value={content} onChange={(event) => { setContent(event.target.value); announceTyping() }} onKeyDown={handleKeyDown} />
       {uploads.length > 0 && <div className="mb-1 flex flex-wrap gap-1">{uploads.map((file) => <button type="button" className="rounded bg-stone-100 px-1.5 py-1 text-[8px]" key={file.id} onClick={() => setUploads((current) => current.filter((item) => item.id !== file.id))}>{file.name} ×</button>)}</div>}
       <div className="flex items-center justify-between"><span className="text-[8px] text-stone-400">{content.length}/2000</span><div className="flex items-center gap-1"><input ref={fileInput} type="file" multiple hidden onChange={(event) => void uploadFiles(event.target.files)} /><button type="button" className="grid size-7 place-items-center rounded-md border-0 bg-stone-100 text-stone-600 disabled:opacity-40" disabled={uploading || uploads.length >= 10} onClick={() => fileInput.current?.click()} aria-label="Attach files"><Paperclip size={13} /></button><button type="button" className="grid size-7 place-items-center rounded-md border-0 bg-stone-100 text-stone-600" onClick={toggleComposerEmoji} aria-label="Insert emoji"><Smile size={13} /></button><button className="grid size-7 place-items-center rounded-md border-0 bg-forest text-white disabled:opacity-40" disabled={(!content.trim() && !uploads.length) || sending || uploading} aria-label="Send message"><Send size={13} /></button></div></div>
     </form>
