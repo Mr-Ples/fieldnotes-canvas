@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, type FormEvent, type KeyboardEvent, type RefObject } from 'react'
-import { Bold, Check, ChevronDown, Code2, Eye, EyeClosed, EyeOff, File, FileText, Heading2, Italic, Link2, List, LogOut, MessageCircle, MoreHorizontal, Plus, Quote, Reply, Send, Settings, Trash2, Upload, UserPlus, Video, X } from 'lucide-react'
+import { Bold, Check, ChevronDown, Code2, Eye, EyeClosed, File, FileText, Heading2, Italic, Link2, List, LogOut, MessageCircle, MoreHorizontal, Plus, Quote, Reply, Send, Settings, Trash2, Upload, UserPlus, Video, X } from 'lucide-react'
 import { canvases, comments, resources, type Canvas, type Comment } from '../data'
 import { Avatar, CopyLinkButton, IconButton, TabButton } from './Primitives'
 import { useLocalStorage } from '../hooks/useLocalStorage'
@@ -25,7 +25,8 @@ export default function CenterPanel() {
   const [collaboration, setCollaboration] = useState<CollaborationSettings>(getCollaborationSettings)
   const [invitePermissions, setInvitePermissions] = useState({ canvas: true, resources: true, discussion: true, llm: true, chat: true })
   const [creatingInvite, setCreatingInvite] = useState(false)
-  const [annotationMode, setAnnotationMode] = useLocalStorage<'track' | 'hover' | 'hidden'>('fieldnotes:annotation-mode', 'track')
+  const [storedAnnotationMode, setAnnotationMode] = useLocalStorage<'track' | 'hover' | 'hidden'>('fieldnotes:annotation-mode', 'track')
+  const annotationMode: 'track' | 'hidden' = storedAnnotationMode === 'hidden' ? 'hidden' : 'track'
   const centerRef = useRef<HTMLElement>(null)
   const accountMenuRef = useRef<HTMLDivElement>(null)
   const [activeCanvas, setActiveCanvas] = useState<Canvas>(() => {
@@ -136,11 +137,11 @@ export default function CenterPanel() {
       <button
         type="button"
         className="annotation-visibility-toggle icon-button ml-auto"
-        onClick={() => setAnnotationMode((current) => current === 'track' ? 'hover' : current === 'hover' ? 'hidden' : 'track')}
-        aria-label={annotationMode === 'track' ? 'Show annotations in track' : annotationMode === 'hover' ? 'Show annotations on hover' : 'Hide annotations'}
-        title={annotationMode === 'track' ? 'Show annotations in track' : annotationMode === 'hover' ? 'Show annotations on hover' : 'Hide annotations'}
+        onClick={() => setAnnotationMode(annotationMode === 'track' ? 'hidden' : 'track')}
+        aria-label={annotationMode === 'track' ? 'Hide annotations' : 'Show annotations'}
+        title={annotationMode === 'track' ? 'Hide annotations' : 'Show annotations'}
       >
-        {annotationMode === 'track' ? <Eye size={16} /> : annotationMode === 'hover' ? <EyeClosed size={16} /> : <EyeOff size={16} />}
+        {annotationMode === 'track' ? <Eye size={16} /> : <EyeClosed size={16} />}
       </button>
     </div>
     {tab === 'notes' ? <Notes key={activeCanvas.id} canvasId={activeCanvas.id} setSaved={setSaved} containerRef={centerRef} canInteract={canUseCanvas} canSaveResource={memberAccess.resources} annotationMode={annotationMode} /> : <Resources canInteract={memberAccess.resources} />}
@@ -160,7 +161,7 @@ function PermissionSelect({ label, description, value, onChange }: { label: stri
   return <label className="permission-select"><span><strong>{label}</strong><small>{description}</small></span><select value={value} onChange={(event) => onChange(event.target.value as AccessMode)}><option value="public">Anyone can suggest</option><option value="login">Login required</option><option value="readonly">Admin + invite only</option></select></label>
 }
 
-function Notes({ canvasId, setSaved, containerRef, canInteract, canSaveResource, annotationMode }: { canvasId: string; setSaved: (value: boolean) => void; containerRef: RefObject<HTMLElement | null>; canInteract: boolean; canSaveResource: boolean; annotationMode: 'track' | 'hover' | 'hidden' }) {
+function Notes({ canvasId, setSaved, containerRef, canInteract, canSaveResource, annotationMode }: { canvasId: string; setSaved: (value: boolean) => void; containerRef: RefObject<HTMLElement | null>; canInteract: boolean; canSaveResource: boolean; annotationMode: 'track' | 'hidden' }) {
   const saveTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined)
   const editor = useRef<HTMLElement>(null)
   useEffect(() => {

@@ -14,7 +14,7 @@ const seedAnnotations: Annotation[] = [
   { id: 'annotation-comment-2', anchorId: 'annotation-2', quote: 'The return is as important as the capture.', author: 'Jon Bell', initials: 'JB', time: '1h ago', body: 'Could we connect this to the idea of “resumability” in tools for thought?' },
 ]
 
-export default function AnnotationLayer({ editorRef, containerRef, canvasId, canInteract, canSaveResource, mode, onDocumentChange }: { editorRef: RefObject<HTMLElement | null>; containerRef: RefObject<HTMLElement | null>; canvasId: string; canInteract: boolean; canSaveResource: boolean; mode: 'track' | 'hover' | 'hidden'; onDocumentChange: () => void }) {
+export default function AnnotationLayer({ editorRef, containerRef, canvasId, canInteract, canSaveResource, mode, onDocumentChange }: { editorRef: RefObject<HTMLElement | null>; containerRef: RefObject<HTMLElement | null>; canvasId: string; canInteract: boolean; canSaveResource: boolean; mode: 'track' | 'hidden'; onDocumentChange: () => void }) {
   const [items, setItems] = useLocalStorage<Annotation[]>('fieldnotes:annotations', seedAnnotations)
   const [selection, setSelection] = useState<{ range: Range; quote: string; rect: DOMRect } | null>(null)
   const [composing, setComposing] = useState(false)
@@ -22,8 +22,10 @@ export default function AnnotationLayer({ editorRef, containerRef, canvasId, can
   const [reply, setReply] = useState<Record<string, string>>({})
   const [menu, setMenu] = useState<string | null>(null)
   const [active, setActive] = useState<string | null>(null)
+  const [hoveredCard, setHoveredCard] = useState<string | null>(null)
   const [activeOrigin, setActiveOrigin] = useState<'anchor' | 'card'>('anchor')
   const [positions, setPositions] = useState<Position[]>([])
+  const [docked, setDocked] = useState(false)
   const [identity, setIdentity] = useState<{ id: string; displayName: string; avatar?: string } | null>(null)
   const composerRef = useRef<HTMLTextAreaElement>(null)
   const locateRef = useRef<() => void>(() => { })
@@ -45,6 +47,7 @@ export default function AnnotationLayer({ editorRef, containerRef, canvasId, can
     if (!editor || !container) return
     const containerRect = container.getBoundingClientRect()
     const editorRect = editor.getBoundingClientRect()
+    const mobile = window.matchMedia('(max-width: 820px)').matches
     const raw = items.flatMap((item) => {
       const anchors = Array.from(editor.querySelectorAll<HTMLElement>(`[data-annotation-id="${CSS.escape(item.id)}"]`))
       const anchorId = item.anchorId ?? legacyAnchorId(item.id)
@@ -57,9 +60,10 @@ export default function AnnotationLayer({ editorRef, containerRef, canvasId, can
       const anchorTop = rect.top - containerRect.top + container.scrollTop
       const top = Math.max(0, anchorTop - 12)
       const rightPanelOpen = !container.closest('.app-shell')?.classList.contains('right-collapsed')
-      const compact = rightPanelOpen && containerRect.right - editorRect.right < 310
+      const compact = mobile || (rightPanelOpen && containerRect.right - editorRect.right < 310)
       return [{ id: item.id, top, compact, anchorTop, anchorBottom: anchorTop + rect.height, anchorRight: rect.right - containerRect.left }]
     }).sort((a, b) => a.top - b.top)
+    setDocked(mobile || raw.some((position) => position.compact))
     const heightFor = (id: string) => cardHeights.current.get(id) ?? Math.min(220, 138 + (items.find((item) => item.id === id)?.replies?.length ?? 0) * 48)
     const activeIndex = active ? raw.findIndex((position) => position.id === active) : -1
     if (activeIndex < 0) {
@@ -114,6 +118,30 @@ export default function AnnotationLayer({ editorRef, containerRef, canvasId, can
   useLayoutEffect(() => { locateRef.current = locate }, [locate])
   useEffect(() => { itemsRef.current = items }, [items])
   useEffect(() => { positionsRef.current = positions }, [positions])
+  useLayoutEffect(() => {
+    if (!active || !docked || activeOrigin !== 'anchor') return
+    const frame = requestAnimationFrame(() => {
+      const list = document.querySelector<HTMLElement>('#right-panel-annotations .docked-annotations')
+      const card = list?.querySelector<HTMLElement>(`[data-annotation-thread-id="${CSS.escape(active)}"]`)
+      if (!list || !card) return
+      const listRect = list.getBoundingClientRect()
+      const cardRect = card.getBoundingClientRect()
+      if (cardRect.top < listRect.top) list.scrollTop -= listRect.top - cardRect.top + 8
+      else if (cardRect.bottom > listRect.bottom) list.scrollTop += cardRect.bottom - listRect.bottom + 8
+    })
+    return () => cancelAnimationFrame(frame)
+  }, [active, activeOrigin, docked])
+  useEffect(() => {
+    const editor = editorRef.current
+    if (!editor) return
+    const highlights = editor.querySelectorAll<HTMLElement>('[data-annotation-id]')
+    highlights.forEach((highlight) => highlight.classList.toggle('is-annotation-active', highlight.dataset.annotationId === hoveredCard))
+    return () => highlights.forEach((highlight) => highlight.classList.remove('is-annotation-active'))
+  }, [editorRef, hoveredCard])
+  useEffect(() => {
+    window.dispatchEvent(new CustomEvent('fieldnotes:annotations-docked', { detail: { docked: docked && mode !== 'hidden', count: items.length } }))
+    return () => window.dispatchEvent(new CustomEvent('fieldnotes:annotations-docked', { detail: { docked: false, count: 0 } }))
+  }, [docked, items.length, mode])
 
   useLayoutEffect(() => {
     if (!positions.length) return
@@ -137,6 +165,18 @@ export default function AnnotationLayer({ editorRef, containerRef, canvasId, can
   }, [items, positions.length])
 
   useLayoutEffect(() => { locate() }, [locate, canvasId])
+  useEffect(() => {
+    let secondFrame = 0
+    const firstFrame = requestAnimationFrame(() => {
+      secondFrame = requestAnimationFrame(() => locateRef.current())
+    })
+    const fontsReady = document.fonts?.ready.then(() => locateRef.current())
+    void fontsReady
+    return () => {
+      cancelAnimationFrame(firstFrame)
+      cancelAnimationFrame(secondFrame)
+    }
+  }, [canvasId])
   useLayoutEffect(() => {
     const container = containerRef.current
     const editor = editorRef.current
@@ -161,6 +201,7 @@ export default function AnnotationLayer({ editorRef, containerRef, canvasId, can
       if (!item) return
       setActiveOrigin('anchor')
       setActive(id)
+      if (docked) window.dispatchEvent(new CustomEvent('fieldnotes:open-annotations', { detail: { id } }))
       const anchorId = item.anchorId ?? legacyAnchorId(item.id)
       const anchor = editorRef.current?.querySelector<HTMLElement>(`[data-annotation-id="${CSS.escape(id)}"]`) ?? (anchorId ? document.getElementById(anchorId) : null)
       anchor?.scrollIntoView({ behavior: 'smooth', block: 'center' })
@@ -168,7 +209,7 @@ export default function AnnotationLayer({ editorRef, containerRef, canvasId, can
     }
     reveal(); window.addEventListener('hashchange', reveal)
     return () => window.removeEventListener('hashchange', reveal)
-  }, [editorRef])
+  }, [docked, editorRef])
 
   useEffect(() => {
     const editor = editorRef.current
@@ -201,18 +242,18 @@ export default function AnnotationLayer({ editorRef, containerRef, canvasId, can
     }
     const click = (event: Event) => {
       const id = (event.target as Element).closest<HTMLElement>('[data-annotation-id]')?.dataset.annotationId
-      if (id) { setActiveOrigin('anchor'); setActive(id) }
+      if (id) { setActiveOrigin('anchor'); setActive(id); if (docked) window.dispatchEvent(new CustomEvent('fieldnotes:open-annotations', { detail: { id } })) }
     }
     editor.addEventListener('mouseover', over); editor.addEventListener('pointermove', move); editor.addEventListener('focusin', over); editor.addEventListener('click', click)
     return () => { editor.removeEventListener('mouseover', over); editor.removeEventListener('pointermove', move); editor.removeEventListener('focusin', over); editor.removeEventListener('click', click) }
-  }, [editorRef])
+  }, [docked, editorRef])
 
   useEffect(() => {
     const close = (event: PointerEvent) => {
       const target = event.target as Element | null
       if (!target) return
       if (!target.closest('.annotation-menu')) setMenu(null)
-      if (!target.closest('[data-annotation-id], .annotation-thread')) {
+      if (!target.closest('[data-annotation-id], .annotation-thread, .annotation-thread-docked')) {
         positionsRef.current.forEach((position) => stableTops.current.set(position.id, position.top))
         setActive(null)
       }
@@ -231,6 +272,7 @@ export default function AnnotationLayer({ editorRef, containerRef, canvasId, can
     const initials = author.split(/\s+/).map((part) => part[0]).join('').slice(0, 2).toUpperCase() || 'YO'
     setItems([...items, { id, quote: selection.quote, author, authorId: identity?.id, avatar: identity?.avatar, initials, time: 'Now', body: body.trim() }])
     onDocumentChange(); closeComposer(); setActiveOrigin('anchor'); setActive(id)
+    if (docked) window.dispatchEvent(new CustomEvent('fieldnotes:open-annotations', { detail: { id } }))
     requestAnimationFrame(locate)
   }
   const addReply = (id: string) => {
@@ -286,7 +328,24 @@ export default function AnnotationLayer({ editorRef, containerRef, canvasId, can
   if (mode === 'hidden') return null
   const rootRect = root.getBoundingClientRect()
   const trackLeft = Math.max(16, Math.min(root.clientWidth - 308, editorRef.current ? editorRef.current.getBoundingClientRect().right - rootRect.left + 18 : root.clientWidth - 308))
-  return createPortal(<div className="annotation-ui" aria-live="polite">
+  const renderCard = (item: Annotation, foreground: boolean) => <article className="annotation-card" id={item.id}>
+    <div className="annotation-meta"><Avatar initials={item.initials} src={item.avatar} name={item.author} color={item.author === 'You' ? 'ink' : 'sage'} /><div><strong>{item.author}</strong><time>{item.time}</time></div><div className="annotation-menu"><button aria-label="Annotation options" aria-expanded={menu === item.id} onClick={() => setMenu(menu === item.id ? null : item.id)}><MoreHorizontal size={16} /></button>{menu === item.id && <div role="menu"><button role="menuitem" onClick={() => void copyLink(item.id)}><Link2 size={13} /> Copy link</button>{canSaveResource && <button role="menuitem" onClick={() => saveAsResource(item)}><BookmarkPlus size={13} /> Save as resource</button>}{canInteract && <button role="menuitem" onClick={() => remove(item.id)}><Trash2 size={13} /> Delete thread</button>}</div>}</div></div>
+    <blockquote className="annotation-quote">“{item.quote}”</blockquote>
+    <p>{item.body}</p>
+    {item.replies?.map((value, index, all) => { if (!foreground && all.length > 2 && index > 0 && index < all.length - 1) return index === 1 ? <div className="annotation-replies-hidden" key={`${item.id}-hidden`}>{all.length - 2} comments hidden</div> : null; const replyValue = typeof value === 'string' ? { id: undefined, author: 'You', authorId: undefined, avatar: undefined, initials: 'YO', body: value } : value; const mine = replyValue.author === 'You' || Boolean(identity?.id && replyValue.authorId === identity.id); return <div className="annotation-reply" key={replyValue.id ?? `${item.id}-${index}`}><Avatar initials={replyValue.initials} src={replyValue.avatar} name={replyValue.author} color="ink" /><p><strong>{replyValue.author}</strong>{replyValue.body}</p>{canInteract && mine && <button className="annotation-reply-delete" onClick={() => removeReply(item.id, index)} aria-label="Delete annotation comment"><Trash2 size={12} /></button>}</div> })}
+    {canInteract && <div className="annotation-reply-box"><input value={reply[item.id] ?? ''} onChange={(event) => setReply((current) => ({ ...current, [item.id]: event.target.value }))} onKeyDown={(event) => { if (event.key === 'Enter') addReply(item.id) }} placeholder="Reply…" aria-label={`Reply to ${item.author}`} /><button onClick={() => addReply(item.id)} disabled={!reply[item.id]?.trim()} aria-label="Send reply"><Send size={13} /></button><button onClick={() => void copyLink(item.id)} aria-label="Copy annotation link"><Link2 size={13} /></button></div>}
+  </article>
+  const dockTarget = document.getElementById('right-panel-annotations')
+  const documentOrder = new Map(positions.map((position, index) => [position.id, index]))
+  const dockedItems = items.map((item, index) => ({ item, index })).sort((a, b) => {
+    const aOrder = documentOrder.get(a.item.id)
+    const bOrder = documentOrder.get(b.item.id)
+    if (aOrder === undefined && bOrder === undefined) return a.index - b.index
+    if (aOrder === undefined) return 1
+    if (bOrder === undefined) return -1
+    return aOrder - bOrder
+  }).map(({ item }) => item)
+  return <>{createPortal(<div className="annotation-ui" aria-live="polite">
     {canInteract && selection && !composing && <button className="annotation-add" style={{ top: selection.rect.top - rootRect.top + selection.rect.height / 2, left: trackLeft }} onMouseDown={(event) => event.preventDefault()} onClick={openComposer} aria-label="Add annotation to selection"><Plus size={14} /> Add annotation</button>}
     {selection && composing && <div className="annotation-composer" style={{ top: selection.rect.bottom - rootRect.top + 8, left: trackLeft }}>
       <div className="annotation-composer-head"><span><MessageSquareText size={14} /> New annotation</span><button onClick={closeComposer} aria-label="Cancel annotation"><X size={15} /></button></div>
@@ -294,23 +353,17 @@ export default function AnnotationLayer({ editorRef, containerRef, canvasId, can
       <textarea ref={composerRef} value={body} onChange={(event) => setBody(event.target.value)} onKeyDown={(event) => { if ((event.metaKey || event.ctrlKey) && event.key === 'Enter') create() }} placeholder="Add a comment…" aria-label="Annotation comment" />
       <div><span>⌘ Enter to send</span><button disabled={!body.trim()} onClick={create}><Check size={13} /> Comment</button></div>
     </div>}
-    <div className="annotation-thread-layer">{positions.map((position) => {
+    {!docked && <div className="annotation-thread-layer">{positions.map((position) => {
       const item = items.find((candidate) => candidate.id === position.id)
       if (!item) return null
       const foreground = active === item.id || menu === item.id
-      const cardLeft = trackLeft
+      const cardLeft = position.compact ? position.anchorRight + 6 : trackLeft
       const top = position.top
-      return <div data-annotation-thread-id={item.id} className={`annotation-thread ${position.compact ? 'is-compact is-over-text' : ''} ${foreground ? 'is-active' : ''}`} style={{ top, left: cardLeft }} key={item.id} onMouseEnter={() => { setActiveOrigin('card'); setActive(item.id) }}>
-        <article className="annotation-card" id={item.id}>
-          <div className="annotation-meta"><Avatar initials={item.initials} src={item.avatar} name={item.author} color={item.author === 'You' ? 'ink' : 'sage'} /><div><strong>{item.author}</strong><time>{item.time}</time></div><div className="annotation-menu"><button aria-label="Annotation options" aria-expanded={menu === item.id} onClick={() => setMenu(menu === item.id ? null : item.id)}><MoreHorizontal size={16} /></button>{menu === item.id && <div role="menu"><button role="menuitem" onClick={() => void copyLink(item.id)}><Link2 size={13} /> Copy link</button>{canSaveResource && <button role="menuitem" onClick={() => saveAsResource(item)}><BookmarkPlus size={13} /> Save as resource</button>}{canInteract && <button role="menuitem" onClick={() => remove(item.id)}><Trash2 size={13} /> Delete thread</button>}</div>}</div></div>
-          <blockquote className="annotation-quote">“{item.quote}”</blockquote>
-          <p>{item.body}</p>
-          {item.replies?.map((value, index, all) => { if (!foreground && all.length > 2 && index > 0 && index < all.length - 1) return index === 1 ? <div className="annotation-replies-hidden" key={`${item.id}-hidden`}>{all.length - 2} comments hidden</div> : null; const replyValue = typeof value === 'string' ? { id: undefined, author: 'You', authorId: undefined, avatar: undefined, initials: 'YO', body: value } : value; const mine = replyValue.author === 'You' || Boolean(identity?.id && replyValue.authorId === identity.id); return <div className="annotation-reply" key={replyValue.id ?? `${item.id}-${index}`}><Avatar initials={replyValue.initials} src={replyValue.avatar} name={replyValue.author} color="ink" /><p><strong>{replyValue.author}</strong>{replyValue.body}</p>{canInteract && mine && <button className="annotation-reply-delete" onClick={() => removeReply(item.id, index)} aria-label="Delete annotation comment"><Trash2 size={12} /></button>}</div> })}
-          {canInteract && <div className="annotation-reply-box"><input value={reply[item.id] ?? ''} onChange={(event) => setReply((current) => ({ ...current, [item.id]: event.target.value }))} onKeyDown={(event) => { if (event.key === 'Enter') addReply(item.id) }} placeholder="Reply…" aria-label={`Reply to ${item.author}`} /><button onClick={() => addReply(item.id)} disabled={!reply[item.id]?.trim()} aria-label="Send reply"><Send size={13} /></button><button onClick={() => void copyLink(item.id)} aria-label="Copy annotation link"><Link2 size={13} /></button></div>}
-        </article>
+      return <div data-annotation-thread-id={item.id} className={`annotation-thread ${position.compact ? 'is-compact is-over-text' : ''} ${foreground ? 'is-active' : ''}`} style={{ top, left: cardLeft }} key={item.id} onMouseEnter={() => { setActiveOrigin('card'); setActive(item.id); setHoveredCard(item.id) }} onMouseLeave={() => setHoveredCard(null)}>
+        {renderCard(item, foreground)}
       </div>
-    })}</div>
-  </div>, root)
+    })}</div>}
+  </div>, root)}{docked && dockTarget && createPortal(<div className="docked-annotations">{dockedItems.map((item) => <div data-annotation-thread-id={item.id} className={`annotation-thread-docked ${active === item.id || menu === item.id ? 'is-active' : ''}`} key={item.id} onMouseEnter={() => { setActiveOrigin('card'); setActive(item.id); setHoveredCard(item.id) }} onMouseLeave={() => setHoveredCard(null)}>{renderCard(item, true)}</div>)}</div>, dockTarget)}</>
 }
 
 function highlightRange(range: Range, id: string) {

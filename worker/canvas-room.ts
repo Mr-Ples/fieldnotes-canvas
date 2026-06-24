@@ -297,7 +297,7 @@ export class CanvasRoom extends DurableObject<Env> {
   }
 
   async claimOwnerToken(token: string): Promise<boolean> {
-    const siteOwnerToken = (this.env as Record<string, string | undefined>).OWNER_TOKEN
+    const siteOwnerToken = (this.env as any).OWNER_TOKEN
     if (siteOwnerToken && token === siteOwnerToken) return true
     const current = await this.getOwnerToken()
     if (current) return current === token

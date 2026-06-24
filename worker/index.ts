@@ -241,7 +241,7 @@ async function canvasChat(request: Request, env: Env, canvasId: string, action: 
         if (response.ok) {
           const channel = JSON.parse(await readBoundedText(response, 64_000)) as DiscordChannel
           discord = { ...discord, channelName: channel.name || 'Unnamed channel' }
-          await room.setDiscordChannelName(discord.channelId, discord.channelName)
+          await room.setDiscordChannelName(discord.channelId, discord.channelName!)
         }
       } catch { /* Ignore name lookup failures. */ }
     }

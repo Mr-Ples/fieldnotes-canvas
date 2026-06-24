@@ -440,7 +440,7 @@ export default function CanvasChat() {
     const left = Math.max(8, Math.min(window.innerWidth - size.width - 8, rect.left + rect.width / 2 - size.width / 2))
     const top = Math.max(8, Math.min(window.innerHeight - size.height - 8, rect.bottom + 6))
     setHeaderMenu(undefined)
-    setPopover((current) => current?.type === type && current.message.id === message.id ? undefined : { type, message, top, left })
+    setPopover((current) => current?.type === type && current.message?.id === message.id ? undefined : { type, message, top, left })
   }
 
   return <div className="flex min-h-0 flex-1 flex-col">
@@ -465,7 +465,7 @@ export default function CanvasChat() {
     </div>
     <Virtuoso ref={list} className={'min-h-0 flex-1 ' + (linkReady ? '' : 'invisible')} data={messages} followOutput={linkedMessageId ? false : 'smooth'} itemContent={(_, message) => {
       const parent = message.replyTo ? byId.get(message.replyTo) : undefined
-      return <article id={`discord-message-${message.id}`} className="deep-link-target group relative px-3 py-2 hover:bg-stone-100/70" onMouseEnter={() => { if (popover && popover.message.id !== message.id) setPopover(undefined) }}>
+      return <article id={`discord-message-${message.id}`} className="deep-link-target group relative px-3 py-2 hover:bg-stone-100/70" onMouseEnter={() => { if (popover && popover.message?.id !== message.id) setPopover(undefined) }}>
         <div className="invisible absolute -top-3 right-2 z-20 flex items-center rounded-md border border-stone-200 bg-white p-0.5 shadow-sm group-hover:visible group-focus-within:visible">
           {canWrite && QUICK_REACTIONS.map((emoji) => <button className="grid size-7 place-items-center rounded border-0 bg-transparent text-sm hover:bg-stone-100" key={emoji} title={'React ' + emoji} onClick={() => void react(message, emoji)}>{emoji}</button>)}
           {canWrite && <button className="grid size-7 place-items-center rounded border-0 bg-transparent text-stone-500 hover:bg-stone-100" title="More reactions" onClick={(event) => togglePopover('emoji', message, event)}><SmilePlus size={14} /></button>}

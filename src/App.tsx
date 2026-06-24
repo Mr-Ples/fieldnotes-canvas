@@ -8,7 +8,7 @@ import { PopupHost } from './components/Popups'
 type MobilePanel = 'left' | 'center' | 'right'
 
 export default function App() {
-  const [mobilePanel, setMobilePanel] = useState<MobilePanel>(() => new URL(window.location.href).searchParams.has('discordConnect') || window.location.hash.startsWith('#discord-message-') ? 'right' : 'center')
+  const [mobilePanel, setMobilePanel] = useState<MobilePanel>(() => new URL(window.location.href).searchParams.has('discordConnect') || window.location.hash.startsWith('#discord-message-') || window.location.hash.startsWith('#annotation-comment') ? 'right' : 'center')
   const [leftOpen, setLeftOpen] = useState(() => storedPanelState('fieldnotes:left-panel-open', true))
   const [rightOpen, setRightOpen] = useState(() => storedPanelState('fieldnotes:right-panel-open', true))
   const [leftWidth, setLeftWidth] = useState(() => storedPanelWidth('fieldnotes:left-panel-width', 340))
@@ -48,13 +48,18 @@ export default function App() {
   useEffect(() => {
     const onHash = () => {
       const hash = window.location.hash
-      if (hash.startsWith('#annotation-comment')) setMobilePanel('center')
+      if (hash.startsWith('#annotation-comment')) setMobilePanel('right')
       else if (hash.startsWith('#chat-')) setMobilePanel('left')
       else if (hash.startsWith('#res-') || hash.startsWith('#comment-')) setMobilePanel('center')
     }
     onHash()
     window.addEventListener('hashchange', onHash)
     return () => window.removeEventListener('hashchange', onHash)
+  }, [])
+  useEffect(() => {
+    const openAnnotations = () => setMobilePanel('right')
+    window.addEventListener('fieldnotes:open-annotations', openAnnotations)
+    return () => window.removeEventListener('fieldnotes:open-annotations', openAnnotations)
   }, [])
   useEffect(() => {
     const token = new URL(window.location.href).searchParams.get('share')
@@ -86,7 +91,7 @@ export default function App() {
     <nav className="mobile-nav" aria-label="Canvas areas">
       <button className={mobilePanel === 'left' ? 'active' : ''} onClick={() => setMobilePanel('left')}><Files size={19}/><span>Canvases</span></button>
       <button className={mobilePanel === 'center' ? 'active' : ''} onClick={() => setMobilePanel('center')}><NotebookPen size={19}/><span>Notes</span></button>
-      <button className={mobilePanel === 'right' ? 'active' : ''} onClick={() => setMobilePanel('right')}><MessageSquare size={19}/><span>Discord</span></button>
+      <button className={mobilePanel === 'right' ? 'active' : ''} onClick={() => setMobilePanel('right')}><MessageSquare size={19}/><span>Activity</span></button>
     </nav>
     <PopupHost />
   </div>
