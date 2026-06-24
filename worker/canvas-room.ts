@@ -109,9 +109,14 @@ export class CanvasRoom extends DurableObject<Env> {
   async listMessages(limit = 50, before?: number): Promise<ChatMessage[]> {
     const safeLimit = Math.max(1, Math.min(limit, 100))
     const rows = before
-      ? this.ctx.storage.sql.exec<MessageRow>('SELECT * FROM messages WHERE created_at < ? ORDER BY created_at DESC LIMIT ?', before, safeLimit).toArray()
-      : this.ctx.storage.sql.exec<MessageRow>('SELECT * FROM messages ORDER BY created_at DESC LIMIT ?', safeLimit).toArray()
+      ? this.ctx.storage.sql.exec<MessageRow>('SELECT * FROM messages WHERE deleted = 0 AND created_at < ? ORDER BY created_at DESC LIMIT ?', before, safeLimit).toArray()
+      : this.ctx.storage.sql.exec<MessageRow>('SELECT * FROM messages WHERE deleted = 0 ORDER BY created_at DESC LIMIT ?', safeLimit).toArray()
     return rows.reverse().map((row) => toMessage(row, this.reactionsFor(row.id)))
+  }
+
+  async getMessage(id: string): Promise<ChatMessage | null> {
+    const row = this.ctx.storage.sql.exec<MessageRow>('SELECT * FROM messages WHERE id = ? AND deleted = 0', id).toArray()[0]
+    return row ? toMessage(row, this.reactionsFor(id)) : null
   }
 
   async postWebsite(input: { authorId: string; authorName: string; authorAvatar?: string; content: string; replyTo?: string; attachments?: ChatMessage['attachments'] }): Promise<ChatMessage> {
@@ -146,8 +151,12 @@ export class CanvasRoom extends DurableObject<Env> {
       return
     }
     if (event.type === 'MESSAGE_DELETE') {
-      const row = this.ctx.storage.sql.exec<MessageRow>('UPDATE messages SET deleted = 1, content = ?, edited_at = ? WHERE discord_message_id = ? RETURNING *', '', Date.now(), event.messageId).toArray()[0]
-      if (row) this.broadcast({ type: 'message', message: toMessage(row, this.reactionsFor(row.id)) })
+      const row = this.ctx.storage.sql.exec<MessageRow>('SELECT * FROM messages WHERE discord_message_id = ?', event.messageId).toArray()[0]
+      if (row) {
+        this.ctx.storage.sql.exec('DELETE FROM reactions WHERE message_id = ?', row.id)
+        this.ctx.storage.sql.exec('DELETE FROM messages WHERE id = ?', row.id)
+        this.broadcast({ type: 'delete', messageId: row.id })
+      }
       return
     }
     if (event.type === 'MESSAGE_UPDATE') {
@@ -209,9 +218,10 @@ export class CanvasRoom extends DurableObject<Env> {
   async deleteOwnMessage(messageId: string, userId: string): Promise<ChatMessage | null> {
     const row = this.ctx.storage.sql.exec<MessageRow>('SELECT * FROM messages WHERE id = ?', messageId).toArray()[0]
     if (!row || normalizeAuthorId(row.author_id) !== normalizeAuthorId(userId)) return null
-    const deleted = this.ctx.storage.sql.exec<MessageRow>('UPDATE messages SET deleted = 1, content = ?, edited_at = ? WHERE id = ? RETURNING *', '', Date.now(), messageId).toArray()[0]
-    const message = toMessage(deleted, this.reactionsFor(messageId))
-    this.broadcast({ type: 'message', message })
+    const message = toMessage(row, this.reactionsFor(messageId))
+    this.ctx.storage.sql.exec('DELETE FROM reactions WHERE message_id = ?', messageId)
+    this.ctx.storage.sql.exec('DELETE FROM messages WHERE id = ?', messageId)
+    this.broadcast({ type: 'delete', messageId })
     return message
   }
 

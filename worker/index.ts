@@ -50,6 +50,7 @@ export default {
       const reactionRoute = url.pathname.match(/^\/api\/canvases\/([^/]+)\/messages\/([0-9a-f-]{36})\/reactions$/)
       if (reactionRoute && request.method === 'POST') return await canvasReaction(request, env, decodeURIComponent(reactionRoute[1]), reactionRoute[2], actor)
       const messageRoute = url.pathname.match(/^\/api\/canvases\/([^/]+)\/messages\/([0-9a-f-]{36})$/)
+      if (messageRoute && request.method === 'GET') return await getCanvasMessage(env, decodeURIComponent(messageRoute[1]), messageRoute[2])
       if (messageRoute && request.method === 'DELETE') return await deleteCanvasMessage(request, env, decodeURIComponent(messageRoute[1]), messageRoute[2], actor)
       const canvasRoute = url.pathname.match(/^\/api\/canvases\/([^/]+)\/(messages|chat)$/)
       if (canvasRoute) return await canvasChat(request, env, decodeURIComponent(canvasRoute[1]), canvasRoute[2], actor)
@@ -189,8 +190,8 @@ class DiscordWebhookPermissionError extends Error {
 function discordWebhookContent(job: Extract<DiscordQueueMessage, { type: 'message' }>) {
   const parts: string[] = []
   if (job.replyAuthorName) {
-    const quote = (job.replyContent ?? '').replace(/\n/g, '\n> ').slice(0, 300)
-    parts.push('> **Replying to ' + job.replyAuthorName.replace(/[*_~]/g, '') + ':** ' + quote)
+    const preview = (job.replyContent ?? '').replace(/\s+/g, ' ').slice(0, 180)
+    parts.push('↪ **Replying to ' + job.replyAuthorName.replace(/[*_~]/g, '') + '** · ' + preview)
   }
   const prefix = job.authorId.startsWith('guest:') ? '**' + job.authorName.replace(/[*_~]/g, '') + ':** ' : ''
   parts.push(prefix + job.content)
@@ -211,8 +212,8 @@ async function canvasChat(request: Request, env: Env, canvasId: string, action: 
   }
   if (request.method === 'GET') {
     const before = Number(new URL(request.url).searchParams.get('before')) || undefined
-    const [messages, discord] = await Promise.all([room.listMessages(50, before), room.getDiscordChannel()])
-    return json({ messages, discord })
+    const [messages, discord, identity] = await Promise.all([room.listMessages(50, before), room.getDiscordChannel(), websiteIdentity(request, env, actor)])
+    return json({ messages, discord, viewerId: identity.authorId })
   }
   if (request.method !== 'POST') return json({ error: 'Method not allowed' }, 405)
   const body = await readJson<{ content?: string; replyTo?: string; guestName?: string; attachments?: Array<{ id?: string; name?: string; url?: string; contentType?: string }> }>(request)
@@ -235,6 +236,12 @@ async function canvasChat(request: Request, env: Env, canvasId: string, action: 
     await env.DISCORD_OUTBOUND.send({ type: 'message', canvasId, messageId: message.id, channelId: message.discordChannelId, content: content ?? '', authorId: message.authorId, authorName: message.authorName, webhookUsername, authorAvatar: message.authorAvatar, attachments, replyAuthorName, replyContent } satisfies DiscordQueueMessage)
   }
   return json({ message }, 201)
+}
+
+async function getCanvasMessage(env: Env, canvasId: string, messageId: string) {
+  if (!/^[a-zA-Z0-9_-]{1,100}$/.test(canvasId)) return json({ error: 'Invalid canvas' }, 400)
+  const message = await env.CANVAS_ROOMS.getByName(canvasId).getMessage(messageId)
+  return message ? json({ message }) : json({ error: 'Message not found' }, 404)
 }
 
 async function canvasReaction(request: Request, env: Env, canvasId: string, messageId: string, actor: string) {
