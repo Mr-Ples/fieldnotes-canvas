@@ -105,6 +105,7 @@
   .note-editor p { @apply mt-0 mb-4; }
   .note-editor mark, .note-editor .annotation-highlight { @apply cursor-pointer text-inherit; background: linear-gradient(transparent 10%, #f5dfa0 10%, #f5dfa0 90%, transparent 90%); box-decoration-break: clone; -webkit-box-decoration-break: clone; }
   .note-editor .annotation-highlight:hover, .note-editor .annotation-highlight:focus { background: linear-gradient(transparent 6%, #efcb68 6%, #efcb68 94%, transparent 94%); }
+  .note-wrap.is-annotations-hidden .annotation-highlight, .note-wrap.is-annotations-hidden .annotation-highlight:hover, .note-wrap.is-annotations-hidden .annotation-highlight:focus { background: transparent !important; cursor: text; }
   .note-editor blockquote { @apply my-6 border-l-2 border-emerald-900/35 py-0.5 pl-5 font-serif text-[19px] italic text-stone-600; }
   .note-editor ul { @apply list-disc pl-6; }
   .note-editor li { @apply my-1 pl-1; }

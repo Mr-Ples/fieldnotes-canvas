@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, type FormEvent, type KeyboardEvent, type RefObject } from 'react'
-import { Bold, Check, ChevronDown, Code2, File, FileText, Heading2, Italic, Link2, List, LogOut, MessageCircle, MoreHorizontal, Plus, Quote, Reply, Send, Settings, Trash2, Upload, UserPlus, Video, X } from 'lucide-react'
+import { Bold, Check, ChevronDown, Code2, Eye, EyeClosed, EyeOff, File, FileText, Heading2, Italic, Link2, List, LogOut, MessageCircle, MoreHorizontal, Plus, Quote, Reply, Send, Settings, Trash2, Upload, UserPlus, Video, X } from 'lucide-react'
 import { canvases, comments, resources, type Canvas, type Comment } from '../data'
 import { Avatar, CopyLinkButton, IconButton, TabButton } from './Primitives'
 import { useLocalStorage } from '../hooks/useLocalStorage'
@@ -25,6 +25,7 @@ export default function CenterPanel() {
   const [collaboration, setCollaboration] = useState<CollaborationSettings>(getCollaborationSettings)
   const [invitePermissions, setInvitePermissions] = useState({ canvas: true, resources: true, discussion: true, llm: true, chat: true })
   const [creatingInvite, setCreatingInvite] = useState(false)
+  const [annotationMode, setAnnotationMode] = useLocalStorage<'track' | 'hover' | 'hidden'>('fieldnotes:annotation-mode', 'track')
   const centerRef = useRef<HTMLElement>(null)
   const accountMenuRef = useRef<HTMLDivElement>(null)
   const [activeCanvas, setActiveCanvas] = useState<Canvas>(() => {
@@ -132,8 +133,17 @@ export default function CenterPanel() {
     <div className="content-tabs" role="tablist">
       <TabButton active={tab === 'notes'} onClick={() => setTab('notes')}>Notes</TabButton>
       <TabButton active={tab === 'resources'} onClick={() => setTab('resources')}>Resources <span className="count">4</span></TabButton>
+      <button
+        type="button"
+        className="annotation-visibility-toggle icon-button ml-auto"
+        onClick={() => setAnnotationMode((current) => current === 'track' ? 'hover' : current === 'hover' ? 'hidden' : 'track')}
+        aria-label={annotationMode === 'track' ? 'Show annotations in track' : annotationMode === 'hover' ? 'Show annotations on hover' : 'Hide annotations'}
+        title={annotationMode === 'track' ? 'Show annotations in track' : annotationMode === 'hover' ? 'Show annotations on hover' : 'Hide annotations'}
+      >
+        {annotationMode === 'track' ? <Eye size={16} /> : annotationMode === 'hover' ? <EyeClosed size={16} /> : <EyeOff size={16} />}
+      </button>
     </div>
-    {tab === 'notes' ? <Notes key={activeCanvas.id} canvasId={activeCanvas.id} setSaved={setSaved} containerRef={centerRef} canInteract={canUseCanvas} canSaveResource={memberAccess.resources} /> : <Resources canInteract={memberAccess.resources} />}
+    {tab === 'notes' ? <Notes key={activeCanvas.id} canvasId={activeCanvas.id} setSaved={setSaved} containerRef={centerRef} canInteract={canUseCanvas} canSaveResource={memberAccess.resources} annotationMode={annotationMode} /> : <Resources canInteract={memberAccess.resources} />}
     <div className="discussion-view"><Comments canInteract={memberAccess.discussion} canSaveResource={memberAccess.resources} /></div>
   </main>
 }
@@ -150,7 +160,7 @@ function PermissionSelect({ label, description, value, onChange }: { label: stri
   return <label className="permission-select"><span><strong>{label}</strong><small>{description}</small></span><select value={value} onChange={(event) => onChange(event.target.value as AccessMode)}><option value="public">Anyone can suggest</option><option value="login">Login required</option><option value="readonly">Admin + invite only</option></select></label>
 }
 
-function Notes({ canvasId, setSaved, containerRef, canInteract, canSaveResource }: { canvasId: string; setSaved: (value: boolean) => void; containerRef: RefObject<HTMLElement | null>; canInteract: boolean; canSaveResource: boolean }) {
+function Notes({ canvasId, setSaved, containerRef, canInteract, canSaveResource, annotationMode }: { canvasId: string; setSaved: (value: boolean) => void; containerRef: RefObject<HTMLElement | null>; canInteract: boolean; canSaveResource: boolean; annotationMode: 'track' | 'hover' | 'hidden' }) {
   const saveTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined)
   const editor = useRef<HTMLElement>(null)
   useEffect(() => {
@@ -185,7 +195,7 @@ function Notes({ canvasId, setSaved, containerRef, canInteract, canSaveResource 
       if (href) format('createLink', href.trim())
     })()
   }
-  return <div className="note-wrap">
+  return <div className={`note-wrap ${annotationMode === 'hidden' ? 'is-annotations-hidden' : ''}`}>
     <div className="format-bar" aria-label="Markdown formatting">
       <IconButton label="Heading" onClick={() => format('formatBlock', 'h2')}><Heading2 size={16} /></IconButton><IconButton label="Bold" onClick={() => format('bold')}><Bold size={16} /></IconButton><IconButton label="Italic" onClick={() => format('italic')}><Italic size={16} /></IconButton><span className="divider"/><IconButton label="Link" onClick={addLink}><Link2 size={16} /></IconButton><IconButton label="Bullet list" onClick={() => format('insertUnorderedList')}><List size={16} /></IconButton><IconButton label="Quote" onClick={() => format('formatBlock', 'blockquote')}><Quote size={16} /></IconButton><IconButton label="Code" onClick={() => format('formatBlock', 'pre')}><Code2 size={16} /></IconButton><div className="format-spacer"/><span className="markdown-label">Markdown</span>
     </div>
@@ -201,7 +211,7 @@ function Notes({ canvasId, setSaved, containerRef, canInteract, canSaveResource 
       <p>The best systems support a loop: notice, explore, make, step away, return. <mark id="annotation-2" onClick={() => { window.location.hash = 'annotation-comment-2' }}>The return is as important as the capture.</mark></p>
       <p className="empty-paragraph">Continue writing, or type “/” for commands…</p>
     </article>
-    <AnnotationLayer editorRef={editor} containerRef={containerRef} canvasId={canvasId} canInteract={canInteract} canSaveResource={canSaveResource} onDocumentChange={() => {
+    <AnnotationLayer editorRef={editor} containerRef={containerRef} canvasId={canvasId} canInteract={canInteract} canSaveResource={canSaveResource} mode={annotationMode} onDocumentChange={() => {
       if (editor.current) localStorage.setItem(`fieldnotes:notes-html:${canvasId}`, editor.current.innerHTML)
     }}/>
   </div>

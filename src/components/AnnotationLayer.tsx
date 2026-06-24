@@ -14,7 +14,7 @@ const seedAnnotations: Annotation[] = [
   { id: 'annotation-comment-2', anchorId: 'annotation-2', quote: 'The return is as important as the capture.', author: 'Jon Bell', initials: 'JB', time: '1h ago', body: 'Could we connect this to the idea of “resumability” in tools for thought?' },
 ]
 
-export default function AnnotationLayer({ editorRef, containerRef, canvasId, canInteract, canSaveResource, onDocumentChange }: { editorRef: RefObject<HTMLElement | null>; containerRef: RefObject<HTMLElement | null>; canvasId: string; canInteract: boolean; canSaveResource: boolean; onDocumentChange: () => void }) {
+export default function AnnotationLayer({ editorRef, containerRef, canvasId, canInteract, canSaveResource, mode, onDocumentChange }: { editorRef: RefObject<HTMLElement | null>; containerRef: RefObject<HTMLElement | null>; canvasId: string; canInteract: boolean; canSaveResource: boolean; mode: 'track' | 'hover' | 'hidden'; onDocumentChange: () => void }) {
   const [items, setItems] = useLocalStorage<Annotation[]>('fieldnotes:annotations', seedAnnotations)
   const [selection, setSelection] = useState<{ range: Range; quote: string; rect: DOMRect } | null>(null)
   const [composing, setComposing] = useState(false)
@@ -26,14 +26,14 @@ export default function AnnotationLayer({ editorRef, containerRef, canvasId, can
   const [positions, setPositions] = useState<Position[]>([])
   const [identity, setIdentity] = useState<{ id: string; displayName: string; avatar?: string } | null>(null)
   const composerRef = useRef<HTMLTextAreaElement>(null)
-  const locateRef = useRef<() => void>(() => {})
+  const locateRef = useRef<() => void>(() => { })
   const itemsRef = useRef(items)
   const stableTops = useRef(new Map<string, number>())
   const cardHeights = useRef(new Map<string, number>())
   const positionsRef = useRef<Position[]>([])
 
   useEffect(() => {
-    void fetch('/api/discord/me').then((response) => response.ok ? response.json() : null).then((result: { user?: { id: string; displayName: string; avatar?: string } } | null) => setIdentity(result?.user ?? null)).catch(() => {})
+    void fetch('/api/discord/me').then((response) => response.ok ? response.json() : null).then((result: { user?: { id: string; displayName: string; avatar?: string } } | null) => setIdentity(result?.user ?? null)).catch(() => { })
     const sync = (event: Event) => setIdentity((event as CustomEvent<{ id: string; displayName: string; avatar?: string } | null>).detail)
     window.addEventListener('fieldnotes:discord-auth-synced', sync)
     return () => window.removeEventListener('fieldnotes:discord-auth-synced', sync)
@@ -283,29 +283,30 @@ export default function AnnotationLayer({ editorRef, containerRef, canvasId, can
 
   const root = containerRef.current
   if (!root) return null
+  if (mode === 'hidden') return null
   const rootRect = root.getBoundingClientRect()
   const trackLeft = Math.max(16, Math.min(root.clientWidth - 308, editorRef.current ? editorRef.current.getBoundingClientRect().right - rootRect.left + 18 : root.clientWidth - 308))
   return createPortal(<div className="annotation-ui" aria-live="polite">
-    {canInteract && selection && !composing && <button className="annotation-add" style={{ top: selection.rect.top - rootRect.top + selection.rect.height / 2, left: trackLeft }} onMouseDown={(event) => event.preventDefault()} onClick={openComposer} aria-label="Add annotation to selection"><Plus size={14}/> Add annotation</button>}
+    {canInteract && selection && !composing && <button className="annotation-add" style={{ top: selection.rect.top - rootRect.top + selection.rect.height / 2, left: trackLeft }} onMouseDown={(event) => event.preventDefault()} onClick={openComposer} aria-label="Add annotation to selection"><Plus size={14} /> Add annotation</button>}
     {selection && composing && <div className="annotation-composer" style={{ top: selection.rect.bottom - rootRect.top + 8, left: trackLeft }}>
-      <div className="annotation-composer-head"><span><MessageSquareText size={14}/> New annotation</span><button onClick={closeComposer} aria-label="Cancel annotation"><X size={15}/></button></div>
+      <div className="annotation-composer-head"><span><MessageSquareText size={14} /> New annotation</span><button onClick={closeComposer} aria-label="Cancel annotation"><X size={15} /></button></div>
       <blockquote>“{selection.quote}”</blockquote>
-      <textarea ref={composerRef} value={body} onChange={(event) => setBody(event.target.value)} onKeyDown={(event) => { if ((event.metaKey || event.ctrlKey) && event.key === 'Enter') create() }} placeholder="Add a comment…" aria-label="Annotation comment"/>
-      <div><span>⌘ Enter to send</span><button disabled={!body.trim()} onClick={create}><Check size={13}/> Comment</button></div>
+      <textarea ref={composerRef} value={body} onChange={(event) => setBody(event.target.value)} onKeyDown={(event) => { if ((event.metaKey || event.ctrlKey) && event.key === 'Enter') create() }} placeholder="Add a comment…" aria-label="Annotation comment" />
+      <div><span>⌘ Enter to send</span><button disabled={!body.trim()} onClick={create}><Check size={13} /> Comment</button></div>
     </div>}
     <div className="annotation-thread-layer">{positions.map((position) => {
       const item = items.find((candidate) => candidate.id === position.id)
       if (!item) return null
       const foreground = active === item.id || menu === item.id
-      const cardLeft = position.compact ? position.anchorRight + 6 : trackLeft
+      const cardLeft = trackLeft
       const top = position.top
       return <div data-annotation-thread-id={item.id} className={`annotation-thread ${position.compact ? 'is-compact is-over-text' : ''} ${foreground ? 'is-active' : ''}`} style={{ top, left: cardLeft }} key={item.id} onMouseEnter={() => { setActiveOrigin('card'); setActive(item.id) }}>
         <article className="annotation-card" id={item.id}>
-          <div className="annotation-meta"><Avatar initials={item.initials} src={item.avatar} name={item.author} color={item.author === 'You' ? 'ink' : 'sage'}/><div><strong>{item.author}</strong><time>{item.time}</time></div><div className="annotation-menu"><button aria-label="Annotation options" aria-expanded={menu === item.id} onClick={() => setMenu(menu === item.id ? null : item.id)}><MoreHorizontal size={16}/></button>{menu === item.id && <div role="menu"><button role="menuitem" onClick={() => void copyLink(item.id)}><Link2 size={13}/> Copy link</button>{canSaveResource && <button role="menuitem" onClick={() => saveAsResource(item)}><BookmarkPlus size={13}/> Save as resource</button>}{canInteract && <button role="menuitem" onClick={() => remove(item.id)}><Trash2 size={13}/> Delete thread</button>}</div>}</div></div>
+          <div className="annotation-meta"><Avatar initials={item.initials} src={item.avatar} name={item.author} color={item.author === 'You' ? 'ink' : 'sage'} /><div><strong>{item.author}</strong><time>{item.time}</time></div><div className="annotation-menu"><button aria-label="Annotation options" aria-expanded={menu === item.id} onClick={() => setMenu(menu === item.id ? null : item.id)}><MoreHorizontal size={16} /></button>{menu === item.id && <div role="menu"><button role="menuitem" onClick={() => void copyLink(item.id)}><Link2 size={13} /> Copy link</button>{canSaveResource && <button role="menuitem" onClick={() => saveAsResource(item)}><BookmarkPlus size={13} /> Save as resource</button>}{canInteract && <button role="menuitem" onClick={() => remove(item.id)}><Trash2 size={13} /> Delete thread</button>}</div>}</div></div>
           <blockquote className="annotation-quote">“{item.quote}”</blockquote>
           <p>{item.body}</p>
-          {item.replies?.map((value, index, all) => { if (!foreground && all.length > 2 && index > 0 && index < all.length - 1) return index === 1 ? <div className="annotation-replies-hidden" key={`${item.id}-hidden`}>{all.length - 2} comments hidden</div> : null; const replyValue = typeof value === 'string' ? { id: undefined, author: 'You', authorId: undefined, avatar: undefined, initials: 'YO', body: value } : value; const mine = replyValue.author === 'You' || Boolean(identity?.id && replyValue.authorId === identity.id); return <div className="annotation-reply" key={replyValue.id ?? `${item.id}-${index}`}><Avatar initials={replyValue.initials} src={replyValue.avatar} name={replyValue.author} color="ink"/><p><strong>{replyValue.author}</strong>{replyValue.body}</p>{canInteract && mine && <button className="annotation-reply-delete" onClick={() => removeReply(item.id, index)} aria-label="Delete annotation comment"><Trash2 size={12}/></button>}</div> })}
-          {canInteract && <div className="annotation-reply-box"><input value={reply[item.id] ?? ''} onChange={(event) => setReply((current) => ({ ...current, [item.id]: event.target.value }))} onKeyDown={(event) => { if (event.key === 'Enter') addReply(item.id) }} placeholder="Reply…" aria-label={`Reply to ${item.author}`}/><button onClick={() => addReply(item.id)} disabled={!reply[item.id]?.trim()} aria-label="Send reply"><Send size={13}/></button><button onClick={() => void copyLink(item.id)} aria-label="Copy annotation link"><Link2 size={13}/></button></div>}
+          {item.replies?.map((value, index, all) => { if (!foreground && all.length > 2 && index > 0 && index < all.length - 1) return index === 1 ? <div className="annotation-replies-hidden" key={`${item.id}-hidden`}>{all.length - 2} comments hidden</div> : null; const replyValue = typeof value === 'string' ? { id: undefined, author: 'You', authorId: undefined, avatar: undefined, initials: 'YO', body: value } : value; const mine = replyValue.author === 'You' || Boolean(identity?.id && replyValue.authorId === identity.id); return <div className="annotation-reply" key={replyValue.id ?? `${item.id}-${index}`}><Avatar initials={replyValue.initials} src={replyValue.avatar} name={replyValue.author} color="ink" /><p><strong>{replyValue.author}</strong>{replyValue.body}</p>{canInteract && mine && <button className="annotation-reply-delete" onClick={() => removeReply(item.id, index)} aria-label="Delete annotation comment"><Trash2 size={12} /></button>}</div> })}
+          {canInteract && <div className="annotation-reply-box"><input value={reply[item.id] ?? ''} onChange={(event) => setReply((current) => ({ ...current, [item.id]: event.target.value }))} onKeyDown={(event) => { if (event.key === 'Enter') addReply(item.id) }} placeholder="Reply…" aria-label={`Reply to ${item.author}`} /><button onClick={() => addReply(item.id)} disabled={!reply[item.id]?.trim()} aria-label="Send reply"><Send size={13} /></button><button onClick={() => void copyLink(item.id)} aria-label="Copy annotation link"><Link2 size={13} /></button></div>}
         </article>
       </div>
     })}</div>
