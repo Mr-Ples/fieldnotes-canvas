@@ -47,7 +47,7 @@ export default function App() {
   useEffect(() => {
     const onHash = () => {
       const hash = window.location.hash
-      if (hash.startsWith('#annotation-comment')) setMobilePanel('right')
+      if (hash.startsWith('#annotation-comment')) setMobilePanel('center')
       else if (hash.startsWith('#chat-')) setMobilePanel('left')
       else if (hash.startsWith('#res-') || hash.startsWith('#comment-')) setMobilePanel('center')
     }
@@ -55,22 +55,6 @@ export default function App() {
     window.addEventListener('hashchange', onHash)
     return () => window.removeEventListener('hashchange', onHash)
   }, [])
-  useEffect(() => {
-    const center = document.querySelector<HTMLElement>('.center-panel')
-    const annotations = document.querySelector<HTMLElement>('.annotations')
-    if (!center || !annotations) return
-    let frame = 0
-    const sync = () => {
-      cancelAnimationFrame(frame)
-      frame = requestAnimationFrame(() => {
-        const centerRange = center.scrollHeight - center.clientHeight
-        const annotationRange = annotations.scrollHeight - annotations.clientHeight
-        if (centerRange > 0 && annotationRange > 0) annotations.scrollTop = (center.scrollTop / centerRange) * annotationRange
-      })
-    }
-    center.addEventListener('scroll', sync, { passive: true })
-    return () => { center.removeEventListener('scroll', sync); cancelAnimationFrame(frame) }
-  }, [mobilePanel])
   useEffect(() => {
     const token = new URL(window.location.href).searchParams.get('share')
     if (!token || sessionStorage.getItem(`fieldnotes:loaded-share:${token}`)) return
@@ -98,7 +82,7 @@ export default function App() {
     <nav className="mobile-nav" aria-label="Canvas areas">
       <button className={mobilePanel === 'left' ? 'active' : ''} onClick={() => setMobilePanel('left')}><Files size={19}/><span>Canvases</span></button>
       <button className={mobilePanel === 'center' ? 'active' : ''} onClick={() => setMobilePanel('center')}><NotebookPen size={19}/><span>Notes</span></button>
-      <button className={mobilePanel === 'right' ? 'active' : ''} onClick={() => setMobilePanel('right')}><MessageSquare size={19}/><span>Comments</span><i>2</i></button>
+      <button className={mobilePanel === 'right' ? 'active' : ''} onClick={() => setMobilePanel('right')}><MessageSquare size={19}/><span>Discord</span></button>
     </nav>
   </div>
 }

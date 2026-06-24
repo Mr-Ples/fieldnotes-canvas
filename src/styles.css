@@ -27,12 +27,13 @@
   .side-panel { @apply flex min-w-0 flex-col overflow-hidden bg-warm; }
   .left-panel { @apply border-r border-rule; }
   .right-panel { @apply border-l border-rule; }
-  .center-panel { @apply min-w-0 overflow-y-auto scroll-smooth bg-paper; }
+  .center-panel { @apply relative min-w-0 overflow-y-auto scroll-smooth bg-paper; }
   .brand-row, .canvas-header { @apply flex h-[59px] shrink-0 items-center justify-between border-b border-rule px-[18px]; }
   .brand { @apply flex items-center gap-2.5 font-serif text-xl font-semibold text-ink no-underline; }
   .brand-mark { @apply grid size-7 place-items-center rounded-lg bg-forest font-serif text-[17px] text-white; }
   .icon-button { @apply grid size-8 cursor-pointer place-items-center rounded-lg border-0 bg-transparent p-0 text-stone-500 hover:bg-ink/7 hover:text-ink; }
   .panel-tabs { @apply flex h-[51px] shrink-0 items-end gap-5 border-b border-rule px-[18px]; }
+  .panel-title { @apply flex h-[42px] items-center text-[13px] font-semibold text-forest; }
   .tab-button { @apply relative inline-flex h-[42px] cursor-pointer items-center gap-1.5 border-0 bg-transparent px-px text-[13px] font-semibold whitespace-nowrap text-stone-500 after:absolute after:inset-x-0 after:-bottom-px after:h-0.5 after:rounded-full after:bg-transparent; }
   .tab-button.is-active { @apply text-forest after:bg-forest; }
   .count { @apply grid h-[19px] min-w-[19px] place-items-center rounded-full bg-stone-200 text-[11px] text-stone-500; }
@@ -96,7 +97,8 @@
   .note-editor { @apply min-h-[calc(100dvh-280px)] px-1 pt-7 pb-40 font-serif text-[17px] leading-[1.76] text-stone-700 outline-none; }
   .note-editor h2 { @apply mt-8 mb-2.5 font-serif text-[25px] leading-tight font-semibold text-ink first:mt-0; }
   .note-editor p { @apply mt-0 mb-4; }
-  .note-editor mark { @apply cursor-pointer text-inherit; background: linear-gradient(transparent 10%, #f5dfa0 10%, #f5dfa0 90%, transparent 90%); }
+  .note-editor mark, .note-editor .annotation-highlight { @apply cursor-pointer text-inherit; background: linear-gradient(transparent 10%, #f5dfa0 10%, #f5dfa0 90%, transparent 90%); box-decoration-break: clone; -webkit-box-decoration-break: clone; }
+  .note-editor .annotation-highlight:hover, .note-editor .annotation-highlight:focus { background: linear-gradient(transparent 6%, #efcb68 6%, #efcb68 94%, transparent 94%); }
   .note-editor blockquote { @apply my-6 border-l-2 border-emerald-900/35 py-0.5 pl-5 font-serif text-[19px] italic text-stone-600; }
   .note-editor ul { @apply list-disc pl-6; }
   .note-editor li { @apply my-1 pl-1; }
@@ -139,17 +141,39 @@
   .comment-body p { @apply my-1 font-serif text-[13px] leading-relaxed text-stone-600; }
   .comment-actions button { @apply flex cursor-pointer items-center gap-1 border-0 bg-transparent p-0 text-[9px] text-stone-500; }
   .comment .comment { @apply mt-2 border-t border-stone-200 pt-2; }
-  .annotations { @apply min-h-0 flex-1 overflow-y-auto px-3 pt-3 pb-10; }
-  .annotation-intro { @apply flex items-center gap-2 px-1 pb-3 text-stone-500; } .annotation-intro p { @apply m-0 text-[9px] leading-snug; }
-  .annotation-card { @apply rounded-[10px] border border-stone-300 bg-white/55 p-2.5 shadow-sm; }
-  .annotation-offset-1 { @apply mt-[61px]; } .annotation-offset-2 { @apply mt-[132px]; }
-  .annotation-quote { @apply -mx-0.5 mb-2.5 rounded-r-md border-l-2 border-amber-500 bg-amber-100 px-2 py-2 font-serif text-[11px] leading-snug italic text-amber-950/70; }
+  .annotation-ui { @apply pointer-events-none absolute inset-0 z-30; }
+  .annotation-add { @apply pointer-events-auto absolute z-50 flex -translate-y-1/2 cursor-pointer items-center gap-1.5 rounded-md border border-emerald-900/20 bg-forest px-3 py-2 text-[10px] font-semibold whitespace-nowrap text-white shadow-lg; }
+  .annotation-composer { @apply pointer-events-auto absolute z-50 w-[292px] rounded-xl border border-stone-300 bg-white p-3 shadow-2xl; }
+  .annotation-composer-head { @apply flex items-center justify-between text-[11px] font-semibold; }
+  .annotation-composer-head span { @apply flex items-center gap-1.5; }
+  .annotation-composer-head > button { @apply grid size-6 cursor-pointer place-items-center rounded-md border-0 bg-transparent text-stone-400 hover:bg-stone-100; }
+  .annotation-composer blockquote { @apply my-2 line-clamp-2 border-l-2 border-amber-400 bg-amber-50 px-2 py-1 font-serif text-[10px] leading-relaxed italic text-stone-500; }
+  .annotation-composer textarea { @apply h-16 w-full resize-none rounded-lg border border-stone-200 bg-stone-50 p-2 text-[11px] outline-none focus:border-emerald-700; }
+  .annotation-composer > div:last-child { @apply mt-2 flex items-center justify-between; }
+  .annotation-composer > div:last-child span { @apply text-[8px] text-stone-400; }
+  .annotation-composer > div:last-child button { @apply flex cursor-pointer items-center gap-1 rounded-md border-0 bg-forest px-2.5 py-1.5 text-[9px] font-semibold text-white disabled:cursor-not-allowed disabled:opacity-40; }
+  .annotation-thread { @apply pointer-events-none absolute z-30 w-[292px]; }
+  .annotation-card { @apply pointer-events-auto rounded-[10px] border border-stone-300 bg-white p-3 shadow-lg transition-[opacity,box-shadow] duration-150; }
+  .annotation-thread.is-active { @apply z-40; }
+  .annotation-thread.is-active .annotation-card { @apply border-emerald-800/35 shadow-xl; }
+  .annotation-thread.is-compact .annotation-card { @apply pointer-events-none opacity-0; }
+  .annotation-thread.is-compact.is-active .annotation-card, .annotation-thread.is-compact:focus-within .annotation-card, .annotation-thread.is-compact:hover .annotation-card { @apply pointer-events-auto opacity-100; }
   .annotation-meta { @apply flex items-center gap-2; } .annotation-meta > div { @apply flex-1; }
+  .annotation-meta > .annotation-menu { @apply relative flex-none; }
+  .annotation-menu > button { @apply grid size-7 cursor-pointer place-items-center rounded-md border-0 bg-transparent text-stone-400 hover:bg-stone-100 hover:text-ink; }
+  .annotation-menu > div { @apply absolute top-7 right-0 z-20 w-32 rounded-lg border border-stone-200 bg-white p-1 shadow-xl; }
+  .annotation-menu > div button { @apply flex w-full cursor-pointer items-center gap-1.5 rounded-md border-0 bg-transparent px-2 py-1.5 text-left text-[9px] text-stone-600 hover:bg-stone-100; }
+  .annotation-menu > div button:last-child { @apply text-red-700; }
   .annotation-meta strong, .annotation-meta time { @apply block text-[9px]; } .annotation-meta time { @apply mt-px text-[8px] text-stone-400; }
-  .annotation-card > p { @apply mx-0.5 my-2 font-serif text-xs leading-relaxed text-stone-600; }
-  .annotation-footer { @apply flex gap-2; } .annotation-footer > button { @apply cursor-pointer border-0 bg-transparent p-0 text-[9px] text-stone-500; }
-  .inline-reply { @apply flex border-t border-stone-200 pt-2; } .inline-reply input { @apply min-w-0 flex-1 border-0 bg-transparent text-[9px] outline-0; }
-  .new-annotation { @apply mt-3 flex h-[35px] w-full cursor-pointer items-center justify-center gap-1 rounded-lg border border-dashed border-stone-400 bg-transparent text-[10px] text-stone-500; }
+  .annotation-card > p { @apply mx-0.5 my-2.5 font-serif text-xs leading-relaxed text-stone-600; }
+  .annotation-reply { @apply flex items-start gap-2 border-t border-stone-100 py-2; }
+  .annotation-reply .avatar { @apply size-6; }
+  .annotation-reply p { @apply m-0 font-serif text-[11px] leading-relaxed text-stone-600; }
+  .annotation-reply strong { @apply mr-1 block font-sans text-[8px] text-ink; }
+  .annotation-reply-box { @apply mt-1 flex items-center gap-1 border-t border-stone-200 pt-2; }
+  .annotation-reply-box input { @apply min-w-0 flex-1 border-0 bg-transparent text-[9px] outline-none; }
+  .annotation-reply-box button { @apply grid size-6 cursor-pointer place-items-center rounded-md border-0 bg-transparent text-stone-400 hover:bg-stone-100 hover:text-forest disabled:cursor-not-allowed disabled:opacity-30; }
+  .annotation-reply-box button:first-of-type { @apply bg-forest text-white hover:bg-forest hover:text-white; }
   .discord-panel { @apply px-6 py-14 text-center; }
   .discord-orb { @apply mx-auto grid size-12 place-items-center rounded-2xl bg-indigo-500 text-2xl font-bold text-white; }
   .discord-panel h3 { @apply mt-3.5 mb-2 font-serif text-[19px] font-semibold; } .discord-panel p { @apply text-[11px] leading-relaxed text-stone-500; }
@@ -182,7 +206,8 @@
   .mobile-nav { @apply fixed inset-x-0 bottom-0 z-50 grid min-h-[60px] grid-cols-3 border-t border-rule bg-paper/95 pb-[env(safe-area-inset-bottom)] backdrop-blur-xl; }
   .mobile-nav button { @apply relative flex flex-col items-center justify-center gap-0.5 border-0 bg-transparent text-[9px] text-stone-500; } .mobile-nav button.active { @apply text-forest; }
   .mobile-nav i { @apply absolute top-1.5 ml-6 grid size-[15px] place-items-center rounded-full bg-clay text-[8px] not-italic text-white; }
-  .annotation-offset-1, .annotation-offset-2 { @apply mt-4; }
+  .annotation-thread .annotation-card { @apply pointer-events-none opacity-0; }
+  .annotation-thread.is-active .annotation-card, .annotation-thread:focus-within .annotation-card, .annotation-thread:hover .annotation-card { @apply pointer-events-auto opacity-100; }
 }
 
 @media (max-width: 560px) {

@@ -1,10 +1,11 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useRef, useState, type FormEvent, type KeyboardEvent, type RefObject } from 'react'
 import { ArrowUpRight, Bold, Check, ChevronDown, Code2, File, FileText, Heading2, Italic, Link2, List, MessageCircle, MoreHorizontal, Plus, Quote, Reply, Send, Upload, Video } from 'lucide-react'
 import { canvases, comments, resources, type Canvas, type Comment } from '../data'
 import { Avatar, CopyLinkButton, IconButton, TabButton } from './Primitives'
 import { useLocalStorage } from '../hooks/useLocalStorage'
 import { CloudinaryMediaStorage } from '../services/media'
 import DiscordIdentity from './DiscordIdentity'
+import AnnotationLayer from './AnnotationLayer'
 
 export default function CenterPanel() {
   const [tab, setTab] = useState<'notes' | 'resources'>('notes')
@@ -12,6 +13,7 @@ export default function CenterPanel() {
   const [tags, setTags] = useLocalStorage('fieldnotes:tags', ['design research', 'attention', 'interfaces'])
   const [saved, setSaved] = useState(true)
   const [sharing, setSharing] = useState(false)
+  const centerRef = useRef<HTMLElement>(null)
   const [activeCanvas, setActiveCanvas] = useState<Canvas>(() => {
     const stored = localStorage.getItem('fieldnotes:active-canvas')
     return stored ? JSON.parse(stored) as Canvas : canvases[0]
@@ -48,7 +50,7 @@ export default function CenterPanel() {
     return () => window.removeEventListener('fieldnotes:canvas-selected', select)
   }, [])
 
-  return <main className="center-panel" id="top">
+  return <main ref={centerRef} className="center-panel" id="top">
     <header className="canvas-header">
       <div className="breadcrumbs"><span>Research</span><span>/</span><strong>{activeCanvas.title}</strong><ChevronDown size={14} /></div>
       <div className="header-actions"><DiscordIdentity compact/><span className="saved-state"><Check size={13} /> {saved ? 'Saved' : 'Saving…'}</span><button className="share-button" disabled={sharing} onClick={() => void share()}>{sharing ? 'Sharing…' : 'Share'} <ArrowUpRight size={15} /></button><IconButton label="More canvas options"><MoreHorizontal size={18} /></IconButton></div>
@@ -70,18 +72,18 @@ export default function CenterPanel() {
       <TabButton active={tab === 'notes'} onClick={() => setTab('notes')}>Notes</TabButton>
       <TabButton active={tab === 'resources'} onClick={() => setTab('resources')}>Resources <span className="count">4</span></TabButton>
     </div>
-    {tab === 'notes' ? <Notes key={activeCanvas.id} canvasId={activeCanvas.id} setSaved={setSaved} /> : <Resources />}
+    {tab === 'notes' ? <Notes key={activeCanvas.id} canvasId={activeCanvas.id} setSaved={setSaved} containerRef={centerRef} /> : <Resources />}
   </main>
 }
 
-function Notes({ canvasId, setSaved }: { canvasId: string; setSaved: (value: boolean) => void }) {
+function Notes({ canvasId, setSaved, containerRef }: { canvasId: string; setSaved: (value: boolean) => void; containerRef: RefObject<HTMLElement | null> }) {
   const saveTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined)
   const editor = useRef<HTMLElement>(null)
   useEffect(() => {
     const saved = localStorage.getItem(`fieldnotes:notes-html:${canvasId}`)
     if (saved && editor.current) editor.current.innerHTML = saved
   }, [canvasId])
-  const change = (event: React.FormEvent<HTMLElement>) => {
+  const change = (event: FormEvent<HTMLElement>) => {
     setSaved(false)
     localStorage.setItem(`fieldnotes:notes-html:${canvasId}`, event.currentTarget.innerHTML)
     clearTimeout(saveTimer.current)
@@ -114,9 +116,12 @@ function Notes({ canvasId, setSaved }: { canvasId: string; setSaved: (value: boo
       <p>An interface can behave less like a sequence of prompts and more like a room. It can hold context, let ideas remain unfinished, and make returning feel natural.</p>
       <ul><li>Make state visible without making it loud.</li><li>Preserve the path back to an idea.</li><li>Let peripheral information stay peripheral.</li><li>Use motion to explain change, not decorate it.</li></ul>
       <h2>Notes toward a calmer system</h2>
-      <p id="annotation-2" onClick={() => { window.location.hash = 'annotation-comment-2' }}>The best systems support a loop: notice, explore, make, step away, return. The return is as important as the capture.</p>
+      <p>The best systems support a loop: notice, explore, make, step away, return. <mark id="annotation-2" onClick={() => { window.location.hash = 'annotation-comment-2' }}>The return is as important as the capture.</mark></p>
       <p className="empty-paragraph">Continue writing, or type “/” for commands…</p>
     </article>
+    <AnnotationLayer editorRef={editor} containerRef={containerRef} canvasId={canvasId} onDocumentChange={() => {
+      if (editor.current) localStorage.setItem(`fieldnotes:notes-html:${canvasId}`, editor.current.innerHTML)
+    }}/>
   </div>
 }
 
@@ -188,7 +193,7 @@ function Comments() {
   const [text, setText] = useState('')
   const [items, setItems] = useLocalStorage('fieldnotes:comments', comments)
   const add = () => { if (!text.trim()) return; setItems([...items, { id: `comment-${Date.now()}`, author: 'You', initials: 'YO', time: 'Now', body: text }]); setText('') }
-  const handleKeyDown = (event: React.KeyboardEvent<HTMLTextAreaElement>) => {
+  const handleKeyDown = (event: KeyboardEvent<HTMLTextAreaElement>) => {
     if (event.key === 'Enter' && !event.shiftKey) {
       event.preventDefault()
       add()
