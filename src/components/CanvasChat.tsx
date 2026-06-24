@@ -1,10 +1,11 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { Check, Copy, ExternalLink, MessageCircleReply, Paperclip, RefreshCw, Send, SmilePlus, Unplug } from 'lucide-react'
+import { BookmarkPlus, Check, Copy, ExternalLink, Forward, Link2, MessageCircleReply, MoreHorizontal, Paperclip, RefreshCw, Send, SmilePlus, Trash2, Unplug } from 'lucide-react'
 import { Virtuoso, type VirtuosoHandle } from 'react-virtuoso'
 import { getDeviceId, getGuestName, setGuestName as saveGuestName } from '../services/api'
 import DiscordConnectModal from './DiscordConnectModal'
 import DiscordIdentity, { type DiscordUser } from './DiscordIdentity'
 import { CloudinaryMediaStorage, type StoredMedia } from '../services/media'
+import { canvases, resources as defaultResources } from '../data'
 
 type Message = {
   id: string; origin: 'website' | 'discord'; authorId: string; authorName: string; authorAvatar?: string;
@@ -14,7 +15,16 @@ type Message = {
   deleted: boolean; syncStatus: 'local' | 'pending' | 'synced' | 'unlinked' | 'failed'
 }
 
-const REACTION_EMOJIS = ['👍', '👎', '❤️', '😂', '😮', '😢', '😡', '🎉', '🔥', '✅', '👀', '🙏', '💯', '🤔', '👏', '🚀']
+const QUICK_REACTIONS = ['👍', '❤️', '😂']
+const EMOJI_GROUPS = [
+  ['Smileys', '😀 😃 😄 😁 😆 😅 😂 🤣 😊 😇 🙂 🙃 😉 😌 😍 🥰 😘 😗 😙 😚 😋 😛 😝 😜 🤪 🤨 🧐 🤓 😎 🤩 🥳 😏 😒 😞 😔 😟 😕 🙁 ☹️ 😣 😖 😫 😩 🥺 😢 😭 😤 😠 😡 🤬 🤯 😳 🥵 🥶 😱 😨 😰 😥 😓 🤗 🤔 🫣 🤭 🫢 🤫 🤥 😶 😐 😑 😬 🙄 😯 😦 😧 😮 😲 🥱 😴 🤤 😪'],
+  ['People', '👋 🤚 🖐️ ✋ 🖖 👌 🤌 🤏 ✌️ 🤞 🫰 🤟 🤘 🤙 👈 👉 👆 👇 ☝️ 👍 👎 ✊ 👊 🤛 🤜 👏 🙌 🫶 👐 🤲 🤝 🙏 ✍️ 💅 🤳 💪 🦾 🦿 🦵 🦶 👂 👃 🧠 🫀 🫁 🦷 👀 👁️ 👅 👄'],
+  ['Nature', '🐶 🐱 🐭 🐹 🐰 🦊 🐻 🐼 🐨 🐯 🦁 🐮 🐷 🐸 🐵 🙈 🙉 🙊 🐔 🐧 🐦 🐤 🦄 🐝 🪱 🐛 🦋 🐌 🐞 🐜 🪲 🕷️ 🦂 🐢 🐍 🦎 🐙 🦑 🦀 🐠 🐟 🐬 🐳 🌸 🌹 🌺 🌻 🌼 🌷 🌱 🌲 🌳 🌴 🌵 🍀 🍁 🍂 🍃'],
+  ['Food', '🍏 🍎 🍐 🍊 🍋 🍌 🍉 🍇 🍓 🫐 🍈 🍒 🍑 🥭 🍍 🥥 🥝 🍅 🥑 🥦 🥬 🥒 🌶️ 🌽 🥕 🫒 🧄 🧅 🥔 🍠 🥐 🥯 🍞 🥖 🧀 🥚 🍳 🧇 🥞 🍔 🍟 🍕 🌭 🥪 🌮 🌯 🥗 🍝 🍜 🍲 🍣 🍱 🍛 🍚 🍰 🎂 🍪 🍩 🍫 🍿 ☕️ 🍺 🍷'],
+  ['Activities', '⚽️ 🏀 🏈 ⚾️ 🥎 🎾 🏐 🏉 🥏 🎱 🪀 🏓 🏸 🏒 🥅 ⛳️ 🛹 🛼 🎿 ⛷️ 🏂 🪂 🏋️ 🤼 🤸 ⛹️ 🤺 🤾 🏊 🚴 🧗 🎮 🕹️ 🎲 ♟️ 🎯 🎳 🎨 🎭 🎤 🎧 🎼 🎹 🥁 🎷 🎺 🎸 🎻'],
+  ['Objects', '⌚️ 📱 💻 ⌨️ 🖥️ 🖨️ 🖱️ 📷 📸 📹 🎥 📞 ☎️ 📺 📻 ⏰ ⌛️ 💡 🔦 🕯️ 🧯 💸 💵 💳 💎 ⚖️ 🧰 🔧 🔨 ⚒️ 🛠️ ⛏️ 🔩 ⚙️ 🧱 ⛓️ 🧲 🔫 💣 🧨 🪓 🔪 🗡️ 🛡️ 🚬 ⚰️ 🔮 📿 💈 🔭 🔬 💊 🩹 🩺 🔑 🗝️ 🚪 🪑 🛋️ 🛏️'],
+  ['Symbols', '❤️ 🧡 💛 💚 💙 💜 🖤 🤍 🤎 💔 ❣️ 💕 💞 💓 💗 💖 💘 💝 💟 ☮️ ✝️ ☪️ 🕉️ ☸️ ✡️ 🔯 🕎 ☯️ ☦️ 🛐 ⛎ ♈️ ♉️ ♊️ ♋️ ♌️ ♍️ ♎️ ♏️ ♐️ ♑️ ♒️ ♓️ 🆔 ⚛️ ☢️ ☣️ 📴 📳 🈶 🈚️ 🉐️ ㊙️ ㊗️ 🆘 ❌ ⭕️ 🛑 ⛔️ 💯 💢 ♨️ 🚷 🚯 🚳 🚱 🔞 📵 ⚠️ ✅ ❎ 🌐 💠 Ⓜ️'],
+] as const
 
 export default function CanvasChat() {
   const [canvas, setCanvas] = useState(() => activeCanvas())
@@ -27,6 +37,7 @@ export default function CanvasChat() {
   const [uploading, setUploading] = useState(false)
   const [typers, setTypers] = useState(() => new Map<string, { name: string; expires: number }>())
   const [reactionPicker, setReactionPicker] = useState('')
+  const [moreMenu, setMoreMenu] = useState('')
   const [guestName, setGuestName] = useState(getGuestName)
   const [myReactions, setMyReactions] = useState(() => new Set<string>())
   const [error, setError] = useState('')
@@ -104,6 +115,11 @@ export default function CanvasChat() {
     return () => clearInterval(timer)
   }, [])
 
+  useEffect(() => {
+    const match = window.location.hash.match(/^#discord-message-([0-9a-f-]{36})$/)
+    if (match && messages.some((message) => message.id === match[1])) requestAnimationFrame(() => focusMessage(match[1]))
+  }, [messages])
+
   const send = async () => {
     const value = content.trim()
     if ((!value && !uploads.length) || sending) return
@@ -155,6 +171,48 @@ export default function CanvasChat() {
     setMessages((current) => current.map((item) => item.id === result.message!.id ? result.message! : item))
   }
 
+  const messageUrl = (message: Message) => {
+    const url = new URL(window.location.href)
+    url.searchParams.set('canvas', canvas.id)
+    url.hash = 'discord-message-' + message.id
+    return url.toString()
+  }
+
+  const copyMessageLink = async (message: Message) => {
+    await navigator.clipboard.writeText(messageUrl(message))
+    setMoreMenu('')
+  }
+
+  const forwardMessage = async (message: Message) => {
+    const data = { title: 'Message from ' + message.authorName, text: message.content, url: messageUrl(message) }
+    if (navigator.share) await navigator.share(data)
+    else await navigator.clipboard.writeText(data.text + '\n' + data.url)
+  }
+
+  const deleteMessage = async (message: Message) => {
+    if (!window.confirm('Delete this message from Fieldnotes and Discord?')) return
+    const response = await fetch('/api/canvases/' + encodeURIComponent(canvas.id) + '/messages/' + message.id, {
+      method: 'DELETE', headers: { 'x-fieldnotes-device': getDeviceId() },
+    })
+    const result = await response.json() as { message?: Message; error?: string }
+    if (!response.ok || !result.message) { setError(result.error ?? 'Could not delete message'); return }
+    setMessages((current) => current.map((item) => item.id === result.message!.id ? result.message! : item))
+    setMoreMenu('')
+  }
+
+  const saveAsResource = (message: Message) => {
+    const key = 'fieldnotes:resources'
+    const current = JSON.parse(localStorage.getItem(key) ?? JSON.stringify(defaultResources)) as Array<Record<string, unknown>>
+    const resource = {
+      id: 'res-chat-' + crypto.randomUUID(), kind: 'chat', title: 'Chat snippet from ' + message.authorName,
+      meta: 'Chat snippet · Saved ' + new Date().toLocaleDateString(), accent: '#5865f2',
+      url: messageUrl(message), content: message.authorName + ' · ' + new Date(message.createdAt).toLocaleString() + '\n\n' + message.content,
+    }
+    localStorage.setItem(key, JSON.stringify([resource, ...current]))
+    window.dispatchEvent(new Event('fieldnotes:resources-changed'))
+    setMoreMenu('')
+  }
+
   return <div className="flex min-h-0 flex-1 flex-col">
     <div className="border-b border-rule px-3 py-2.5">
       <div className="flex items-center justify-between"><span className="truncate text-[11px] font-semibold">{canvas.title}</span><span className={`flex items-center gap-1 text-[9px] ${connected ? 'text-emerald-700' : 'text-stone-400'}`}>{connected ? <Check size={11}/> : <RefreshCw size={11}/>} {connected ? 'Live' : 'Connecting'}</span></div>
@@ -165,23 +223,36 @@ export default function CanvasChat() {
     </div>
     <Virtuoso ref={list} className="min-h-0 flex-1" data={messages} followOutput="smooth" itemContent={(_, message) => {
       const parent = message.replyTo ? byId.get(message.replyTo) : undefined
-      return <article id={`discord-message-${message.id}`} className="group px-3 py-2 hover:bg-stone-100/70">
+      return <article id={`discord-message-${message.id}`} className="deep-link-target group relative px-3 py-2 hover:bg-stone-100/70">
+        <div className="invisible absolute -top-3 right-2 z-20 flex items-center rounded-md border border-stone-200 bg-white p-0.5 shadow-sm group-hover:visible group-focus-within:visible">
+          {QUICK_REACTIONS.map((emoji) => <button className="grid size-7 place-items-center rounded border-0 bg-transparent text-sm hover:bg-stone-100" key={emoji} title={'React ' + emoji} onClick={() => void react(message, emoji)}>{emoji}</button>)}
+          <div className="relative"><button className="grid size-7 place-items-center rounded border-0 bg-transparent text-stone-500 hover:bg-stone-100" title="More reactions" onClick={() => setReactionPicker((current) => current === message.id ? '' : message.id)}><SmilePlus size={14}/></button>
+            {reactionPicker === message.id && <div className="absolute top-8 right-0 z-30 h-72 w-72 overflow-y-auto rounded-xl border border-stone-200 bg-white p-3 shadow-xl">{EMOJI_GROUPS.map(([label, emojis]) => <section className="mb-3" key={label}><h4 className="mb-1 text-[9px] font-bold uppercase tracking-wide text-stone-400">{label}</h4><div className="grid grid-cols-8 gap-0.5">{emojis.split(' ').map((emoji) => <button className="grid size-7 place-items-center rounded border-0 bg-transparent text-base hover:bg-stone-100" key={label + emoji} onClick={() => { void react(message, emoji); setReactionPicker('') }}>{emoji}</button>)}</div></section>)}</div>}
+          </div>
+          <button className="grid size-7 place-items-center rounded border-0 bg-transparent text-stone-500 hover:bg-stone-100" title="Reply" onClick={() => setReplyTo(message)}><MessageCircleReply size={14}/></button>
+          <button className="grid size-7 place-items-center rounded border-0 bg-transparent text-stone-500 hover:bg-stone-100" title="Forward" onClick={() => void forwardMessage(message)}><Forward size={14}/></button>
+          <div className="relative"><button className="grid size-7 place-items-center rounded border-0 bg-transparent text-stone-500 hover:bg-stone-100" title="More" onClick={() => setMoreMenu((current) => current === message.id ? '' : message.id)}><MoreHorizontal size={15}/></button>
+            {moreMenu === message.id && <div className="absolute top-8 right-0 z-30 w-44 rounded-lg border border-stone-200 bg-white p-1 text-[10px] shadow-xl">
+              <button className="flex w-full items-center gap-2 rounded border-0 bg-transparent px-2 py-2 text-left hover:bg-stone-100" onClick={() => void copyMessageLink(message)}><Link2 size={13}/> Copy message link</button>
+              <button className="flex w-full items-center gap-2 rounded border-0 bg-transparent px-2 py-2 text-left hover:bg-stone-100" onClick={() => saveAsResource(message)}><BookmarkPlus size={13}/> Save as resource</button>
+              <button className="flex w-full items-center gap-2 rounded border-0 bg-transparent px-2 py-2 text-left text-red-600 hover:bg-red-50" onClick={() => void deleteMessage(message)}><Trash2 size={13}/> Delete message</button>
+            </div>}
+          </div>
+        </div>
         <div className="flex gap-2">
           {message.authorAvatar ? <img src={message.authorAvatar} alt="" className="size-7 rounded-full"/> : <span className="avatar avatar-sage">{message.authorName.slice(0, 2).toUpperCase()}</span>}
           <div className="min-w-0 flex-1">
             <div className="flex items-center gap-1.5"><strong className="truncate text-[10px]">{message.authorName}</strong>{message.origin === 'discord' && <span className="rounded bg-indigo-100 px-1 text-[7px] font-bold text-indigo-700">DISCORD</span>}<time className="text-[8px] text-stone-400">{new Date(message.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</time></div>
-            {parent && <div className="mt-1 truncate border-l-2 border-stone-300 pl-2 text-[9px] text-stone-400">{parent.authorName}: {parent.content}</div>}
+            {parent && <button className="mt-1 block w-full truncate border-0 border-l-2 border-stone-300 bg-transparent pl-2 text-left text-[9px] text-stone-400 hover:text-stone-600" onClick={() => focusMessage(parent.id)}><strong>{parent.authorName}</strong> {parent.content || 'Attachment'}</button>}
             <p className={`my-1 whitespace-pre-wrap font-serif text-xs leading-relaxed ${message.deleted ? 'italic text-stone-400' : 'text-stone-700'}`}>{message.deleted ? 'Message deleted' : message.content}</p>
             {message.attachments.map(renderAttachment)}
             <div className="my-1 flex flex-wrap gap-1">{(message.reactions ?? []).map((reaction) => <button key={reaction.emoji} title={(reaction.participants ?? []).join(', ')} aria-label={reaction.emoji + ' from ' + (reaction.participants ?? []).join(', ')} className={'flex items-center gap-1 rounded-full border px-1.5 py-0.5 text-[9px] ' + (myReactions.has(message.id + ':' + reaction.emoji) ? 'border-indigo-300 bg-indigo-50' : 'border-stone-200 bg-white')} onClick={() => void react(message, reaction.emoji)}>{renderEmoji(reaction.emoji)} {reaction.count}</button>)}</div>
             {(message.reactions ?? []).length > 0 && <div className="mb-1 truncate text-[8px] text-stone-400">{message.reactions.map((reaction) => reaction.emoji + ' ' + (reaction.participants ?? []).join(', ')).join(' · ')}</div>}
-            <div className="relative mb-1"><button className="flex items-center gap-1 border-0 bg-transparent p-0 text-[8px] text-stone-500" onClick={() => setReactionPicker((current) => current === message.id ? '' : message.id)}><SmilePlus size={10}/> React</button>{reactionPicker === message.id && <div className="absolute bottom-full left-0 z-20 grid grid-cols-8 gap-1 rounded-lg border border-stone-200 bg-white p-2 shadow-lg">{REACTION_EMOJIS.map((emoji) => <button className="border-0 bg-transparent p-1 text-sm hover:bg-stone-100" key={emoji} onClick={() => { void react(message, emoji); setReactionPicker('') }}>{emoji}</button>)}</div>}</div>
             <div className="flex items-center gap-2"><button className="flex items-center gap-1 border-0 bg-transparent p-0 text-[8px] text-stone-500" onClick={() => setReplyTo(message)}><MessageCircleReply size={10}/> Reply</button>{message.origin === 'website' && <span className={`text-[8px] ${message.syncStatus === 'failed' ? 'text-red-600' : 'text-stone-400'}`}>{message.syncStatus === 'unlinked' ? 'Site only' : message.syncStatus === 'pending' ? 'Sending to Discord…' : message.syncStatus === 'failed' ? 'Discord delivery failed' : 'Synced'}</span>}</div>
           </div>
         </div>
       </article>
     }}/>
-    {replyTo && <div className="flex items-center justify-between border-t border-rule bg-stone-100 px-3 py-1.5 text-[9px] text-stone-500"><span className="truncate">Replying to {replyTo.authorName}: {replyTo.content}</span><button className="border-0 bg-transparent" onClick={() => setReplyTo(undefined)}>×</button></div>}
     {error && <div role="alert" className="flex items-center gap-1 px-3 py-1 text-[9px] text-red-700"><Unplug size={10}/>{error}</div>}
     <div className="min-h-4 px-3 text-[9px] italic text-stone-400">{typingLabel([...typers.values()].map((typer) => typer.name))}</div>
     <div className="flex items-center justify-between border-t border-rule px-3 pt-2">
@@ -189,6 +260,7 @@ export default function CanvasChat() {
       <DiscordIdentity compact onChange={setIdentity}/>
     </div>
     <form className="m-3 mt-2 rounded-lg border border-stone-300 bg-white p-2" onSubmit={(event) => { event.preventDefault(); void send() }}>
+      {replyTo && <div className="-mx-2 -mt-2 mb-2 flex items-center gap-2 rounded-t-lg border-b border-stone-200 bg-stone-50 px-2 py-1.5 text-[9px]"><MessageCircleReply size={11} className="shrink-0 text-indigo-500"/><button type="button" className="min-w-0 flex-1 truncate border-0 bg-transparent text-left text-stone-500" onClick={() => focusMessage(replyTo.id)}>Replying to <strong className="text-stone-700">{replyTo.authorName}</strong> · {replyTo.content || 'Attachment'}</button><button type="button" className="grid size-5 place-items-center border-0 bg-transparent text-stone-400" onClick={() => setReplyTo(undefined)}>×</button></div>}
       <textarea className="h-14 w-full resize-none border-0 bg-transparent text-[11px] outline-none" maxLength={2000} placeholder="Message this canvas and Discord…" value={content} onChange={(event) => { setContent(event.target.value); announceTyping() }}/>
       {uploads.length > 0 && <div className="mb-1 flex flex-wrap gap-1">{uploads.map((file) => <button type="button" className="rounded bg-stone-100 px-1.5 py-1 text-[8px]" key={file.id} onClick={() => setUploads((current) => current.filter((item) => item.id !== file.id))}>{file.name} ×</button>)}</div>}
       <div className="flex items-center justify-between"><span className="text-[8px] text-stone-400">{content.length}/2000</span><div className="flex items-center gap-1"><input ref={fileInput} type="file" multiple hidden onChange={(event) => void uploadFiles(event.target.files)}/><button type="button" className="grid size-7 place-items-center rounded-md border-0 bg-stone-100 text-stone-600 disabled:opacity-40" disabled={uploading || uploads.length >= 10} onClick={() => fileInput.current?.click()} aria-label="Attach files"><Paperclip size={13}/></button><button className="grid size-7 place-items-center rounded-md border-0 bg-forest text-white disabled:opacity-40" disabled={(!content.trim() && !uploads.length) || sending || uploading} aria-label="Send message"><Send size={13}/></button></div></div>
@@ -205,6 +277,9 @@ export default function CanvasChat() {
 }
 
 function activeCanvas() {
+  const requested = new URL(window.location.href).searchParams.get('canvas')
+  const linked = requested ? canvases.find((canvas) => canvas.id === requested) : undefined
+  if (requested && /^[a-zA-Z0-9_-]{1,100}$/.test(requested)) return { id: requested, title: linked?.title ?? 'Linked canvas' }
   const stored = localStorage.getItem('fieldnotes:active-canvas')
   return stored ? JSON.parse(stored) as { id: string; title: string } : { id: 'attention', title: 'Designing for attention' }
 }
@@ -239,4 +314,11 @@ function typingLabel(names: string[]) {
   if (unique.length === 1) return unique[0] + ' is typing…'
   if (unique.length === 2) return unique[0] + ' and ' + unique[1] + ' are typing…'
   return unique[0] + ', ' + unique[1] + ' and ' + (unique.length - 2) + ' others are typing…'
+}
+
+function focusMessage(id: string) {
+  const element = document.getElementById('discord-message-' + id)
+  if (!element) return
+  element.scrollIntoView({ behavior: 'smooth', block: 'center' })
+  element.animate([{ backgroundColor: '#fef3c7' }, { backgroundColor: 'transparent' }], { duration: 1_800, easing: 'ease-out' })
 }

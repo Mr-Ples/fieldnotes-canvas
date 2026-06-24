@@ -206,6 +206,15 @@ export class CanvasRoom extends DurableObject<Env> {
     return { message, active }
   }
 
+  async deleteOwnMessage(messageId: string, userId: string): Promise<ChatMessage | null> {
+    const row = this.ctx.storage.sql.exec<MessageRow>('SELECT * FROM messages WHERE id = ?', messageId).toArray()[0]
+    if (!row || normalizeAuthorId(row.author_id) !== normalizeAuthorId(userId)) return null
+    const deleted = this.ctx.storage.sql.exec<MessageRow>('UPDATE messages SET deleted = 1, content = ?, edited_at = ? WHERE id = ? RETURNING *', '', Date.now(), messageId).toArray()[0]
+    const message = toMessage(deleted, this.reactionsFor(messageId))
+    this.broadcast({ type: 'message', message })
+    return message
+  }
+
   private reactionsFor(messageId: string) {
     const rows = this.ctx.storage.sql.exec<{ emoji: string; user_id: string; user_name: string | null }>('SELECT emoji, user_id, user_name FROM reactions WHERE message_id = ?', messageId).toArray()
     const users = new Map<string, Map<string, string>>()
@@ -300,4 +309,8 @@ function normalizeEmoji(emoji: string) {
 function safeGuestName(value: string | undefined, fallback = 'Guest') {
   const cleaned = value?.trim().replace(/[@*_~<>]/g, '').slice(0, 32)
   return cleaned || fallback
+}
+
+function normalizeAuthorId(value: string) {
+  return value.startsWith('discord:') ? value.slice(8) : value
 }

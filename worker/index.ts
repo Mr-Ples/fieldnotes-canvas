@@ -7,9 +7,10 @@ const MAX_JSON_BYTES = 64_000
 
 type IncomingMessage = { role: 'user' | 'assistant'; content: string }
 type DiscordQueueMessage =
-  | { type: 'message'; canvasId: string; messageId: string; channelId: string; content: string; authorId: string; authorName: string; authorAvatar?: string; attachments: Array<{ name: string; url: string; contentType?: string }>; replyAuthorName?: string; replyContent?: string }
+  | { type: 'message'; canvasId: string; messageId: string; channelId: string; content: string; authorId: string; authorName: string; webhookUsername: string; authorAvatar?: string; attachments: Array<{ name: string; url: string; contentType?: string }>; replyAuthorName?: string; replyContent?: string }
   | { type: 'reaction'; channelId: string; discordMessageId: string; emoji: string; active: boolean }
   | { type: 'typing'; channelId: string }
+  | { type: 'delete'; channelId: string; discordMessageId: string; origin: 'website' | 'discord' }
 
 export default {
   async fetch(request, env, ctx): Promise<Response> {
@@ -48,6 +49,8 @@ export default {
       if (discordInviteRoute && request.method === 'POST') return await canvasDiscordInvite(env, decodeURIComponent(discordInviteRoute[1]))
       const reactionRoute = url.pathname.match(/^\/api\/canvases\/([^/]+)\/messages\/([0-9a-f-]{36})\/reactions$/)
       if (reactionRoute && request.method === 'POST') return await canvasReaction(request, env, decodeURIComponent(reactionRoute[1]), reactionRoute[2], actor)
+      const messageRoute = url.pathname.match(/^\/api\/canvases\/([^/]+)\/messages\/([0-9a-f-]{36})$/)
+      if (messageRoute && request.method === 'DELETE') return await deleteCanvasMessage(request, env, decodeURIComponent(messageRoute[1]), messageRoute[2], actor)
       const canvasRoute = url.pathname.match(/^\/api\/canvases\/([^/]+)\/(messages|chat)$/)
       if (canvasRoute) return await canvasChat(request, env, decodeURIComponent(canvasRoute[1]), canvasRoute[2], actor)
       if (url.pathname === '/api/internal/discord/link' && request.method === 'POST') return await linkDiscordChannel(request, env)
@@ -74,6 +77,17 @@ export default {
           if (!response.ok) throw new Error(`Discord reaction returned ${response.status}`)
           item.ack(); continue
         }
+        if (job.type === 'delete') {
+          let response: Response
+          if (job.origin === 'website') {
+            const webhook = await ensureDiscordWebhook(env, job.channelId)
+            const target = new URL('https://discord.com/api/v10/webhooks/' + webhook.id + '/' + webhook.token + '/messages/' + job.discordMessageId)
+            if (webhook.threadId) target.searchParams.set('thread_id', webhook.threadId)
+            response = await fetch(target, { method: 'DELETE', signal: AbortSignal.timeout(15_000) })
+          } else response = await discordFetch(env, '/channels/' + job.channelId + '/messages/' + job.discordMessageId, { method: 'DELETE' })
+          if (!response.ok && response.status !== 404) throw new Error('Discord delete returned ' + response.status)
+          item.ack(); continue
+        }
         const webhook = await ensureDiscordWebhook(env, job.channelId)
         const target = new URL(`https://discord.com/api/v10/webhooks/${webhook.id}/${webhook.token}`)
         target.searchParams.set('wait', 'true')
@@ -81,7 +95,7 @@ export default {
         const form = new FormData()
         const payload = {
           content: discordWebhookContent(job),
-          username: job.authorId.startsWith('guest:') ? 'Fieldnotes Guest' : job.authorName.slice(0, 80),
+          username: job.webhookUsername.slice(0, 80),
           avatar_url: job.authorId.startsWith('guest:') ? undefined : job.authorAvatar,
           allowed_mentions: { parse: [] },
           attachments: job.attachments.map((attachment, id) => ({ id, filename: attachment.name })),
@@ -206,6 +220,7 @@ async function canvasChat(request: Request, env: Env, canvasId: string, action: 
   const attachments = (body.attachments ?? []).filter((item) => item.id && item.name && item.url && allowedMediaUrl(item.url, env)).slice(0, 10) as Array<{ id: string; name: string; url: string; contentType?: string }>
   if ((!content && !attachments.length) || (content?.length ?? 0) > 2_000) return json({ error: 'Add a message or attachment (message limit: 2,000 characters)' }, 400)
   const identity = await websiteIdentity(request, env, actor)
+  const webhookUsername = identity.authorName
   if (identity.authorId.startsWith('guest:')) identity.authorName = safeGuestName(body.guestName, identity.authorName)
   const message = await room.postWebsite({ ...identity, content: content ?? '', replyTo: body.replyTo, attachments })
   if (message.discordChannelId) {
@@ -217,7 +232,7 @@ async function canvasChat(request: Request, env: Env, canvasId: string, action: 
       replyAuthorName = parent?.authorName
       replyContent = parent?.content
     }
-    await env.DISCORD_OUTBOUND.send({ type: 'message', canvasId, messageId: message.id, channelId: message.discordChannelId, content: content ?? '', authorId: message.authorId, authorName: message.authorName, authorAvatar: message.authorAvatar, attachments, replyAuthorName, replyContent } satisfies DiscordQueueMessage)
+    await env.DISCORD_OUTBOUND.send({ type: 'message', canvasId, messageId: message.id, channelId: message.discordChannelId, content: content ?? '', authorId: message.authorId, authorName: message.authorName, webhookUsername, authorAvatar: message.authorAvatar, attachments, replyAuthorName, replyContent } satisfies DiscordQueueMessage)
   }
   return json({ message }, 201)
 }
@@ -235,6 +250,17 @@ async function canvasReaction(request: Request, env: Env, canvasId: string, mess
     await env.DISCORD_OUTBOUND.send({ type: 'reaction', channelId: result.message.discordChannelId, discordMessageId: result.message.discordMessageId, emoji, active: result.active } satisfies DiscordQueueMessage)
   }
   return json(result)
+}
+
+async function deleteCanvasMessage(request: Request, env: Env, canvasId: string, messageId: string, actor: string) {
+  if (!/^[a-zA-Z0-9_-]{1,100}$/.test(canvasId)) return json({ error: 'Invalid canvas' }, 400)
+  const identity = await websiteIdentity(request, env, actor)
+  const message = await env.CANVAS_ROOMS.getByName(canvasId).deleteOwnMessage(messageId, identity.authorId)
+  if (!message) return json({ error: 'Message not found or you do not own it' }, 403)
+  if (message.discordChannelId && message.discordMessageId) {
+    await env.DISCORD_OUTBOUND.send({ type: 'delete', channelId: message.discordChannelId, discordMessageId: message.discordMessageId, origin: message.origin } satisfies DiscordQueueMessage)
+  }
+  return json({ message })
 }
 
 async function canvasDiscordInvite(env: Env, canvasId: string) {
@@ -438,7 +464,7 @@ function canManageGuild(guild: DiscordGuild) {
 
 function discordBotInvite(clientId: string, guildId: string) {
   const url = new URL('https://discord.com/oauth2/authorize')
-  url.search = new URLSearchParams({ client_id: clientId, scope: 'bot applications.commands', permissions: '275414895681', guild_id: guildId, disable_guild_select: 'true' }).toString()
+  url.search = new URLSearchParams({ client_id: clientId, scope: 'bot applications.commands', permissions: '275414903873', guild_id: guildId, disable_guild_select: 'true' }).toString()
   return url.toString()
 }
 
