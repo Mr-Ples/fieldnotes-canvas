@@ -73,13 +73,13 @@ client.on(Events.MessageDelete, async (message) => {
 client.on(Events.MessageReactionAdd, async (reaction, user) => {
   if (user.bot) return
   if (reaction.partial) await reaction.fetch()
-  await sendReactionEvent('REACTION_ADD', reaction.message.id, reaction.message.channelId, reaction.message.guildId, reactionEmoji(reaction.emoji), user.id)
+  await sendReactionEvent('REACTION_ADD', reaction.message.id, reaction.message.channelId, reaction.message.guildId, reactionEmoji(reaction.emoji), user.id, user.globalName ?? user.username)
 })
 
 client.on(Events.MessageReactionRemove, async (reaction, user) => {
   if (user.bot) return
   if (reaction.partial) await reaction.fetch()
-  await sendReactionEvent('REACTION_REMOVE', reaction.message.id, reaction.message.channelId, reaction.message.guildId, reactionEmoji(reaction.emoji), user.id)
+  await sendReactionEvent('REACTION_REMOVE', reaction.message.id, reaction.message.channelId, reaction.message.guildId, reactionEmoji(reaction.emoji), user.id, user.globalName ?? user.username)
 })
 
 client.on(Events.TypingStart, async (typing) => {
@@ -94,9 +94,9 @@ client.on(Events.TypingStart, async (typing) => {
   }
 })
 
-async function sendReactionEvent(type: 'REACTION_ADD' | 'REACTION_REMOVE', messageId: string, channelId: string, guildId: string | null, emoji: string, userId: string) {
+async function sendReactionEvent(type: 'REACTION_ADD' | 'REACTION_REMOVE', messageId: string, channelId: string, guildId: string | null, emoji: string, userId: string, userName: string) {
   try {
-    await post('/api/internal/discord/events', { type, messageId, channelId, guildId: guildId ?? undefined, emoji, userId })
+    await post('/api/internal/discord/events', { type, messageId, channelId, guildId: guildId ?? undefined, emoji, userId, userName })
   } catch (error) {
     console.error(JSON.stringify({ event: 'discord_reaction_failed', type, messageId, error: error instanceof Error ? error.message : 'Unknown error' }))
   }

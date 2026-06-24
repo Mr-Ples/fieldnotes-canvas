@@ -9,7 +9,7 @@ export type ChatMessage = {
   content: string
   replyTo?: string
   attachments: Array<{ id: string; name: string; url: string; contentType?: string }>
-  reactions: Array<{ emoji: string; count: number }>
+  reactions: Array<{ emoji: string; count: number; participants: string[] }>
   discordMessageId?: string
   discordChannelId?: string
   discordGuildId?: string
@@ -64,9 +64,12 @@ export class CanvasRoom extends DurableObject<Env> {
           message_id TEXT NOT NULL,
           emoji TEXT NOT NULL,
           user_id TEXT NOT NULL,
+          user_name TEXT,
           PRIMARY KEY (message_id, emoji, user_id)
         );
       `)
+      const reactionColumns = this.ctx.storage.sql.exec<{ name: string }>('PRAGMA table_info(reactions)').toArray()
+      if (!reactionColumns.some((column) => column.name === 'user_name')) this.ctx.storage.sql.exec('ALTER TABLE reactions ADD COLUMN user_name TEXT')
     })
   }
 
@@ -75,7 +78,12 @@ export class CanvasRoom extends DurableObject<Env> {
     const pair = new WebSocketPair()
     const [client, server] = Object.values(pair)
     this.ctx.acceptWebSocket(server)
-    server.serializeAttachment({ connectedAt: Date.now(), authorName: decodeURIComponent(request.headers.get('x-fieldnotes-author-name') ?? 'Someone') })
+    server.serializeAttachment({
+      connectedAt: Date.now(),
+      authorId: request.headers.get('x-fieldnotes-author-id') ?? 'website',
+      authorName: decodeURIComponent(request.headers.get('x-fieldnotes-author-name') ?? 'Someone'),
+      guest: request.headers.get('x-fieldnotes-guest') === 'true',
+    })
     server.send(JSON.stringify({ type: 'ready', messages: await this.listMessages(50) }))
     return new Response(null, { status: 101, webSocket: client })
   }
@@ -84,10 +92,11 @@ export class CanvasRoom extends DurableObject<Env> {
     if (typeof message !== 'string') return
     if (message === 'ping') { ws.send('pong'); return }
     try {
-      const payload = JSON.parse(message) as { type?: string }
+      const payload = JSON.parse(message) as { type?: string; guestName?: string }
       if (payload.type !== 'typing') return
-      const authorName = (ws.deserializeAttachment() as { authorName?: string } | null)?.authorName ?? 'Someone'
-      this.broadcast({ type: 'typing', authorName }, ws)
+      const attachment = ws.deserializeAttachment() as { authorId?: string; authorName?: string; guest?: boolean } | null
+      const authorName = attachment?.guest ? safeGuestName(payload.guestName, attachment.authorName) : attachment?.authorName ?? 'Someone'
+      this.broadcast({ type: 'typing', userId: attachment?.authorId ?? 'website', authorName }, ws)
       const channel = await this.getDiscordChannel()
       if (channel) await this.env.DISCORD_OUTBOUND.send({ type: 'typing', channelId: channel.channelId })
     } catch { /* Ignore malformed client events. */ }
@@ -120,7 +129,7 @@ export class CanvasRoom extends DurableObject<Env> {
 
   async ingestDiscord(event: DiscordEvent): Promise<void> {
     if (event.type === 'TYPING_START') {
-      this.broadcast({ type: 'typing', authorName: event.userName ?? 'Someone' })
+      this.broadcast({ type: 'typing', userId: event.userId ?? 'discord', authorName: event.userName ?? 'Someone' })
       return
     }
     if (event.type === 'REACTION_ADD' || event.type === 'REACTION_REMOVE') {
@@ -128,7 +137,7 @@ export class CanvasRoom extends DurableObject<Env> {
       const emoji = normalizeEmoji(event.emoji)
       const row = this.ctx.storage.sql.exec<MessageRow>('SELECT * FROM messages WHERE discord_message_id = ?', event.messageId).toArray()[0]
       if (!row) return
-      if (event.type === 'REACTION_ADD') this.ctx.storage.sql.exec('INSERT OR IGNORE INTO reactions VALUES (?, ?, ?)', row.id, emoji, event.userId)
+      if (event.type === 'REACTION_ADD') this.ctx.storage.sql.exec('INSERT OR REPLACE INTO reactions(message_id, emoji, user_id, user_name) VALUES (?, ?, ?, ?)', row.id, emoji, event.userId, event.userName ?? 'Discord user')
       else {
         this.ctx.storage.sql.exec('DELETE FROM reactions WHERE message_id = ? AND emoji = ? AND user_id = ?', row.id, emoji, event.userId)
         if (emoji !== event.emoji) this.ctx.storage.sql.exec('DELETE FROM reactions WHERE message_id = ? AND emoji = ? AND user_id = ?', row.id, event.emoji, event.userId)
@@ -161,8 +170,8 @@ export class CanvasRoom extends DurableObject<Env> {
     this.broadcast({ type: 'message', message })
   }
 
-  async setDiscordChannel(channelId: string, guildId: string): Promise<void> {
-    this.ctx.storage.sql.exec("INSERT OR REPLACE INTO config(key, value) VALUES ('discord', ?)", JSON.stringify({ channelId, guildId }))
+  async setDiscordChannel(channelId: string, guildId: string, inviteUrl?: string): Promise<void> {
+    this.ctx.storage.sql.exec("INSERT OR REPLACE INTO config(key, value) VALUES ('discord', ?)", JSON.stringify({ channelId, guildId, inviteUrl }))
     this.broadcast({ type: 'linked', channelId, guildId })
   }
 
@@ -171,9 +180,9 @@ export class CanvasRoom extends DurableObject<Env> {
     if (current?.channelId === channelId) this.ctx.storage.sql.exec("DELETE FROM config WHERE key = 'discord'")
   }
 
-  async getDiscordChannel(): Promise<{ channelId: string; guildId: string } | null> {
+  async getDiscordChannel(): Promise<{ channelId: string; guildId: string; inviteUrl?: string } | null> {
     const value = this.ctx.storage.sql.exec<{ value: string }>("SELECT value FROM config WHERE key = 'discord'").toArray()[0]?.value
-    return value ? JSON.parse(value) as { channelId: string; guildId: string } : null
+    return value ? JSON.parse(value) as { channelId: string; guildId: string; inviteUrl?: string } : null
   }
 
   async markDelivered(id: string, discordMessageId: string): Promise<void> {
@@ -186,11 +195,11 @@ export class CanvasRoom extends DurableObject<Env> {
     if (row) this.broadcast({ type: 'message', message: toMessage(row, this.reactionsFor(row.id)) })
   }
 
-  async toggleWebsiteReaction(messageId: string, emoji: string, userId: string): Promise<{ message: ChatMessage; active: boolean } | null> {
+  async toggleWebsiteReaction(messageId: string, emoji: string, userId: string, userName: string): Promise<{ message: ChatMessage; active: boolean } | null> {
     const row = this.ctx.storage.sql.exec<MessageRow>('SELECT * FROM messages WHERE id = ?', messageId).toArray()[0]
     if (!row) return null
     const active = !this.ctx.storage.sql.exec<{ found: number }>('SELECT 1 AS found FROM reactions WHERE message_id = ? AND emoji = ? AND user_id = ?', messageId, emoji, userId).toArray()[0]
-    if (active) this.ctx.storage.sql.exec('INSERT OR IGNORE INTO reactions VALUES (?, ?, ?)', messageId, emoji, userId)
+    if (active) this.ctx.storage.sql.exec('INSERT OR REPLACE INTO reactions(message_id, emoji, user_id, user_name) VALUES (?, ?, ?, ?)', messageId, emoji, userId, userName)
     else this.ctx.storage.sql.exec('DELETE FROM reactions WHERE message_id = ? AND emoji = ? AND user_id = ?', messageId, emoji, userId)
     const message = toMessage(row, this.reactionsFor(messageId))
     this.broadcast({ type: 'message', message })
@@ -198,15 +207,15 @@ export class CanvasRoom extends DurableObject<Env> {
   }
 
   private reactionsFor(messageId: string) {
-    const rows = this.ctx.storage.sql.exec<{ emoji: string; user_id: string }>('SELECT emoji, user_id FROM reactions WHERE message_id = ?', messageId).toArray()
-    const users = new Map<string, Set<string>>()
+    const rows = this.ctx.storage.sql.exec<{ emoji: string; user_id: string; user_name: string | null }>('SELECT emoji, user_id, user_name FROM reactions WHERE message_id = ?', messageId).toArray()
+    const users = new Map<string, Map<string, string>>()
     for (const row of rows) {
       const emoji = normalizeEmoji(row.emoji)
-      const reacting = users.get(emoji) ?? new Set<string>()
-      reacting.add(row.user_id)
+      const reacting = users.get(emoji) ?? new Map<string, string>()
+      reacting.set(row.user_id, row.user_name ?? 'Unknown user')
       users.set(emoji, reacting)
     }
-    return [...users].map(([emoji, reacting]) => ({ emoji, count: reacting.size }))
+    return [...users].map(([emoji, reacting]) => ({ emoji, count: reacting.size, participants: [...reacting.values()] }))
   }
 
   private insert(message: ChatMessage) {
@@ -286,4 +295,9 @@ function toMessage(row: MessageRow, reactions: ChatMessage['reactions'] = []): C
 function normalizeEmoji(emoji: string) {
   try { return decodeURIComponent(emoji) }
   catch { return emoji }
+}
+
+function safeGuestName(value: string | undefined, fallback = 'Guest') {
+  const cleaned = value?.trim().replace(/[@*_~<>]/g, '').slice(0, 32)
+  return cleaned || fallback
 }

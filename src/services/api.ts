@@ -11,7 +11,14 @@ export function getDeviceId() {
 }
 
 export function getGuestName() {
-  return `Guest-${getDeviceId().replaceAll('-', '').slice(0, 6).toUpperCase()}`
+  return localStorage.getItem('fieldnotes:guest-name') || `Guest-${getDeviceId().replaceAll('-', '').slice(0, 6).toUpperCase()}`
+}
+
+export function setGuestName(name: string) {
+  const cleaned = name.trim().replace(/[@*_~<>]/g, '').slice(0, 32)
+  if (cleaned) localStorage.setItem('fieldnotes:guest-name', cleaned)
+  else localStorage.removeItem('fieldnotes:guest-name')
+  return getGuestName()
 }
 
 export async function completeChat(messages: ChatMessage[], signal?: AbortSignal) {
