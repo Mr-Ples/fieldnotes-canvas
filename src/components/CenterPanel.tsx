@@ -29,7 +29,7 @@ export default function CenterPanel() {
       const snapshot: Record<string, string> = {}
       for (let index = 0; index < localStorage.length; index++) {
         const key = localStorage.key(index)
-        if (key?.startsWith('fieldnotes:') && key !== 'fieldnotes:device-id') snapshot[key] = localStorage.getItem(key) ?? ''
+        if (key?.startsWith('fieldnotes:') && key !== 'fieldnotes:device-id' && key !== 'fieldnotes:owner-token') snapshot[key] = localStorage.getItem(key) ?? ''
       }
       const response = await fetch('/api/shares', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ snapshot }) })
       const result = await response.json() as { token?: string; error?: string }

@@ -66,7 +66,7 @@ export default function DiscordConnectModal({ canvasId, open, onClose, onLinked 
     if (!session || !guild) return
     setLoading(true); setError('')
     try {
-      const response = await fetch('/api/discord/connect/link', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ session, canvasId, guildId: guild.id, channelId: channel.id }) })
+      const response = await fetch('/api/discord/connect/link', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ session, canvasId, guildId: guild.id, channelId: channel.id, channelName: channel.name }) })
       const result = await response.json() as { error?: string; inviteUrl?: string; needsBotAuthorization?: boolean }
       if (result.inviteUrl) setInviteUrl(result.inviteUrl)
       if (!response.ok) throw new Error(result.error ?? 'Could not link channel')

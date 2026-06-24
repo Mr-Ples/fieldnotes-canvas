@@ -1,8 +1,8 @@
-import { useEffect, useMemo, useRef, useState, type MouseEvent as ReactMouseEvent } from 'react'
+import { useEffect, useLayoutEffect, useMemo, useRef, useState, type MouseEvent as ReactMouseEvent } from 'react'
 import { createPortal } from 'react-dom'
 import { BookmarkPlus, Check, ExternalLink, Forward, Link2, MessageCircleReply, MoreHorizontal, Paperclip, RefreshCw, Send, SmilePlus, Trash2, Unplug } from 'lucide-react'
 import { Virtuoso, type VirtuosoHandle } from 'react-virtuoso'
-import { getDeviceId, getGuestName, setGuestName as saveGuestName } from '../services/api'
+import { getDeviceId, getGuestName, getOwnerToken, setGuestName as saveGuestName } from '../services/api'
 import DiscordConnectModal from './DiscordConnectModal'
 import DiscordIdentity, { type DiscordUser } from './DiscordIdentity'
 import { CloudinaryMediaStorage, type StoredMedia } from '../services/media'
@@ -38,7 +38,7 @@ export default function CanvasChat() {
   const [uploads, setUploads] = useState<StoredMedia[]>([])
   const [uploading, setUploading] = useState(false)
   const [typers, setTypers] = useState(() => new Map<string, { name: string; expires: number }>())
-  const [popover, setPopover] = useState<{ type: 'emoji' | 'more'; message: Message; top: number; right: number }>()
+  const [popover, setPopover] = useState<{ type: 'emoji' | 'more'; message: Message; top: number; left: number }>()
   const [linkReady, setLinkReady] = useState(() => !linkedMessageId)
   const [saveState, setSaveState] = useState<'idle' | 'saving' | 'saved' | 'error'>('idle')
   const [guestName, setGuestName] = useState(getGuestName)
@@ -46,17 +46,23 @@ export default function CanvasChat() {
   const [error, setError] = useState('')
   const [discordLinked, setDiscordLinked] = useState(false)
   const [discordInvite, setDiscordInvite] = useState('')
+  const [discordChannelName, setDiscordChannelName] = useState('')
   const [discordAuthorization, setDiscordAuthorization] = useState('')
-  const [viewerId, setViewerId] = useState('')
-  const [guestViewerId, setGuestViewerId] = useState('')
+  const [canModerate, setCanModerate] = useState(false)
   const [identity, setIdentity] = useState<DiscordUser | null>(null)
   const [connectOpen, setConnectOpen] = useState(() => new URL(window.location.href).searchParams.has('discordConnect'))
+  const [headerMenu, setHeaderMenu] = useState<{ top: number; left: number }>()
+  const [reactionHover, setReactionHover] = useState<{ messageId: string; emoji: string; participants: string[]; top: number; left: number }>()
   const list = useRef<VirtuosoHandle>(null)
   const linkedMessageHandled = useRef(false)
   const socketRef = useRef<WebSocket | undefined>(undefined)
   const typingSentAt = useRef(0)
+  const composerRef = useRef<HTMLTextAreaElement>(null)
   const fileInput = useRef<HTMLInputElement>(null)
+  const popoverRef = useRef<HTMLDivElement>(null)
+  const headerMenuRef = useRef<HTMLDivElement>(null)
   const storage = useRef(new CloudinaryMediaStorage())
+  const ownerToken = useState(getOwnerToken)[0]
   const byId = useMemo(() => new Map(messages.map((message) => [message.id, message])), [messages])
 
   useEffect(() => {
@@ -100,13 +106,12 @@ export default function CanvasChat() {
       }
       socket.onerror = () => socket?.close()
     }
-    void fetch(`/api/canvases/${encodeURIComponent(canvas.id)}/messages`).then(async (response) => {
+    void fetch(`/api/canvases/${encodeURIComponent(canvas.id)}/messages`, { headers: { 'x-fieldnotes-owner-token': ownerToken } }).then(async (response) => {
       if (!response.ok) throw new Error('Could not load chat')
-      const result = await response.json() as { messages: Message[]; discord?: { channelId: string; inviteUrl?: string } | null; viewerId?: string }
+      const result = await response.json() as { messages: Message[]; discord?: { channelId: string; guildId: string; inviteUrl?: string; channelName?: string } | null; canModerate?: boolean }
       if (!disposed) {
-        merge(result.messages); setViewerId(result.viewerId ?? '')
-        if (result.viewerId?.startsWith('guest:')) setGuestViewerId(result.viewerId)
-        setDiscordLinked(Boolean(result.discord)); setDiscordInvite(result.discord?.inviteUrl ?? '')
+        merge(result.messages); setCanModerate(Boolean(result.canModerate))
+        setDiscordLinked(Boolean(result.discord)); setDiscordInvite(result.discord?.inviteUrl ?? ''); setDiscordChannelName(result.discord?.channelName ?? '')
       }
       const linkedId = window.location.hash.match(/^#discord-message-([0-9a-f-]{36})$/)?.[1]
       if (linkedId && !result.messages.some((message) => message.id === linkedId)) {
@@ -116,7 +121,7 @@ export default function CanvasChat() {
         else if (!disposed) setLinkReady(true)
       }
       if (result.discord && !result.discord.inviteUrl) {
-        const inviteResponse = await fetch('/api/canvases/' + encodeURIComponent(canvas.id) + '/discord-invite', { method: 'POST' })
+        const inviteResponse = await fetch('/api/canvases/' + encodeURIComponent(canvas.id) + '/discord-invite', { method: 'POST', headers: { 'x-fieldnotes-owner-token': ownerToken } })
         const invite = await inviteResponse.json() as { inviteUrl?: string; authorizationUrl?: string }
         if (!disposed && inviteResponse.ok) setDiscordInvite(invite.inviteUrl ?? '')
         else if (!disposed) setDiscordAuthorization(invite.authorizationUrl ?? '')
@@ -132,6 +137,27 @@ export default function CanvasChat() {
       return next.size === current.size ? current : next
     }), 1_000)
     return () => clearInterval(timer)
+  }, [])
+
+  useLayoutEffect(() => {
+    const element = composerRef.current
+    if (!element) return
+    element.style.height = 'auto'
+    const height = Math.min(160, Math.max(56, element.scrollHeight))
+    element.style.height = height + 'px'
+  }, [content])
+
+  useEffect(() => {
+    const closeMenus = (event: PointerEvent) => {
+      const target = event.target as Node | null
+      if (!target) return
+      if (popoverRef.current?.contains(target) || headerMenuRef.current?.contains(target)) return
+      setPopover(undefined)
+      setHeaderMenu(undefined)
+      setReactionHover(undefined)
+    }
+    window.addEventListener('pointerdown', closeMenus)
+    return () => window.removeEventListener('pointerdown', closeMenus)
   }, [])
 
   useEffect(() => {
@@ -220,9 +246,10 @@ export default function CanvasChat() {
   }
 
   const deleteMessage = async (message: Message) => {
+    if (!canModerate) return
     if (!window.confirm('Delete this message from Fieldnotes and Discord?')) return
     const response = await fetch('/api/canvases/' + encodeURIComponent(canvas.id) + '/messages/' + message.id, {
-      method: 'DELETE', headers: { 'x-fieldnotes-device': getDeviceId() },
+      method: 'DELETE', headers: { 'x-fieldnotes-device': getDeviceId(), 'x-fieldnotes-owner-token': ownerToken },
     })
     const result = await response.json() as { message?: Message; error?: string }
     if (!response.ok || !result.message) { setError(result.error ?? 'Could not delete message'); return }
@@ -231,6 +258,7 @@ export default function CanvasChat() {
   }
 
   const saveAsResource = (message: Message) => {
+    if (!canModerate) return
     const key = 'fieldnotes:resources'
     const current = JSON.parse(localStorage.getItem(key) ?? JSON.stringify(defaultResources)) as Array<Record<string, unknown>>
     const resource = {
@@ -244,6 +272,7 @@ export default function CanvasChat() {
   }
 
   const saveConversation = async () => {
+    if (!canModerate) return
     if (!window.confirm('Save the entire retained conversation as a resource?')) return
     setSaveState('saving')
     try {
@@ -275,18 +304,31 @@ export default function CanvasChat() {
 
   const togglePopover = (type: 'emoji' | 'more', message: Message, event: ReactMouseEvent<HTMLButtonElement>) => {
     const rect = event.currentTarget.getBoundingClientRect()
-    setPopover((current) => current?.type === type && current.message.id === message.id ? undefined : {
-      type, message, top: Math.max(8, rect.top - (type === 'emoji' ? 296 : 132)), right: Math.max(8, window.innerWidth - rect.right),
-    })
+    const size = type === 'emoji' ? { width: 288, height: 304 } : { width: 188, height: 136 }
+    const left = Math.max(8, Math.min(window.innerWidth - size.width - 8, rect.left + rect.width / 2 - size.width / 2))
+    const top = Math.max(8, Math.min(window.innerHeight - size.height - 8, rect.bottom + 6))
+    setHeaderMenu(undefined)
+    setPopover((current) => current?.type === type && current.message.id === message.id ? undefined : { type, message, top, left })
   }
 
   return <div className="flex min-h-0 flex-1 flex-col">
     <div className="border-b border-rule px-3 py-2.5">
-      <div className="flex items-center justify-between"><span className="truncate text-[11px] font-semibold">{canvas.title}</span><span className={`flex items-center gap-1 text-[9px] ${connected ? 'text-emerald-700' : 'text-stone-400'}`}>{connected ? <Check size={11}/> : <RefreshCw size={11}/>} {connected ? 'Live' : 'Connecting'}</span></div>
-      <button className={`mt-2 w-full rounded-md border px-2 py-1.5 text-[9px] font-semibold ${discordLinked ? 'border-emerald-200 bg-emerald-50 text-emerald-800' : 'border-indigo-200 bg-indigo-50 text-indigo-700'}`} onClick={() => setConnectOpen(true)}>{discordLinked ? 'Discord connected · Change channel' : 'Connect Discord'}</button>
-      <button disabled={saveState !== 'idle'} className="mt-1 flex items-center gap-1 border-0 bg-transparent p-0 text-[9px] font-semibold text-emerald-800 disabled:opacity-60" onClick={() => void saveConversation()}>{saveState === 'saved' ? <Check size={10}/> : <BookmarkPlus size={10}/>} {saveState === 'saving' ? 'Saving…' : saveState === 'saved' ? 'Saved to resources' : saveState === 'error' ? 'Save failed' : 'Save conversation'}</button>
-      {discordInvite && <a className="mt-1 inline-flex items-center gap-1 text-[9px] font-semibold text-indigo-700" href={discordInvite} target="_blank" rel="noreferrer">Join Discord server <ExternalLink size={9}/></a>}
-      {!discordInvite && discordAuthorization && <a className="mt-1 inline-flex items-center gap-1 text-[9px] font-semibold text-indigo-700" href={discordAuthorization} target="_blank" rel="noreferrer">Enable server invite <ExternalLink size={9}/></a>}
+      <div className="flex items-start justify-between gap-2">
+        <div className="min-w-0">
+          <div className="truncate text-[11px] font-semibold">{discordChannelName ? `#${discordChannelName}` : canvas.title}</div>
+          <div className={`mt-0.5 flex items-center gap-1 text-[8px] ${connected ? 'text-emerald-700' : 'text-stone-400'}`}>{connected ? <Check size={10}/> : <RefreshCw size={10}/>} {connected ? 'Live' : 'Connecting'}{discordLinked && <span>· Discord linked</span>}{saveState !== 'idle' && <span>· {saveState === 'saving' ? 'Saving…' : saveState === 'saved' ? 'Saved to resources' : 'Save failed'}</span>}</div>
+        </div>
+        <button className="grid size-7 place-items-center rounded-md border border-stone-200 bg-white text-stone-500 hover:bg-stone-50" aria-label="More channel options" onClick={(event) => {
+          const rect = event.currentTarget.getBoundingClientRect()
+          const width = 224
+          const height = 124
+          setPopover(undefined)
+          setHeaderMenu((current) => current ? undefined : {
+            left: Math.max(8, Math.min(window.innerWidth - width - 8, rect.right - width)),
+            top: Math.max(8, Math.min(window.innerHeight - height - 8, rect.bottom + 6)),
+          })
+        }}><MoreHorizontal size={16}/></button>
+      </div>
     </div>
     <Virtuoso ref={list} className={'min-h-0 flex-1 ' + (linkReady ? '' : 'invisible')} data={messages} followOutput={linkedMessageId ? false : 'smooth'} itemContent={(_, message) => {
       const parent = message.replyTo ? byId.get(message.replyTo) : undefined
@@ -299,16 +341,24 @@ export default function CanvasChat() {
           <button className="grid size-7 place-items-center rounded border-0 bg-transparent text-stone-500 hover:bg-stone-100" title="More" onClick={(event) => togglePopover('more', message, event)}><MoreHorizontal size={15}/></button>
         </div>
         {parent && <span aria-hidden="true" className="pointer-events-none absolute left-[25px] top-4 h-[14px] w-[31px] rounded-tl-xl border-l-2 border-t-2 border-stone-300"/>}
-        {parent && <button className="mb-0.5 ml-9 flex max-w-[calc(100%-2.25rem)] items-center gap-1.5 truncate border-0 bg-transparent p-0 text-left text-[9px] text-stone-400 hover:text-stone-600" onClick={() => jumpToMessage(parent.id)}>{parent.authorAvatar ? <img className="size-4 rounded-full" src={parent.authorAvatar} alt=""/> : <span className="grid size-4 place-items-center rounded-full bg-stone-200 text-[6px]">{parent.authorName.slice(0, 2).toUpperCase()}</span>}<strong>{parent.authorName}</strong><span className="truncate">{parent.content || 'Attachment'}</span></button>}
+        {parent && <button className="relative z-10 mb-0.5 ml-9 flex max-w-[calc(100%-2.25rem)] items-center gap-1.5 truncate border-0 bg-transparent p-0 text-left text-[9px] text-stone-400 hover:text-stone-600" onClick={() => jumpToMessage(parent.id)}>{parent.authorAvatar ? <span className="relative z-20 grid size-4 place-items-center rounded-full bg-paper"><img className="size-4 rounded-full" src={parent.authorAvatar} alt=""/></span> : <span className="relative z-20 grid size-4 place-items-center rounded-full bg-stone-200 text-[6px]">{parent.authorName.slice(0, 2).toUpperCase()}</span>}<strong>{parent.authorName}</strong><span className="truncate">{parent.content || 'Attachment'}</span></button>}
         <div className="flex gap-2">
           {message.authorAvatar ? <img src={message.authorAvatar} alt="" className="size-7 rounded-full"/> : <span className="avatar avatar-sage">{message.authorName.slice(0, 2).toUpperCase()}</span>}
           <div className="min-w-0 flex-1">
             <div className="flex items-center gap-1.5"><strong className="truncate text-[10px]">{message.authorName}</strong>{message.origin === 'discord' && <span className="rounded bg-indigo-100 px-1 text-[7px] font-bold text-indigo-700">DISCORD</span>}<time className="text-[8px] text-stone-400">{new Date(message.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</time></div>
             <p className="my-1 whitespace-pre-wrap font-serif text-xs leading-relaxed text-stone-700">{message.content}</p>
             {message.attachments.map(renderAttachment)}
-            <div className="my-1 flex flex-wrap gap-1">{(message.reactions ?? []).map((reaction) => <button key={reaction.emoji} title={(reaction.participants ?? []).join(', ')} aria-label={reaction.emoji + ' from ' + (reaction.participants ?? []).join(', ')} className={'flex items-center gap-1 rounded-full border px-1.5 py-0.5 text-[9px] ' + (myReactions.has(message.id + ':' + reaction.emoji) ? 'border-indigo-300 bg-indigo-50' : 'border-stone-200 bg-white')} onClick={() => void react(message, reaction.emoji)}>{renderEmoji(reaction.emoji)} {reaction.count}</button>)}</div>
-            {(message.reactions ?? []).length > 0 && <div className="mb-1 truncate text-[8px] text-stone-400">{message.reactions.map((reaction) => reaction.emoji + ' ' + (reaction.participants ?? []).join(', ')).join(' · ')}</div>}
-            {message.origin === 'website' && <div className={`text-[8px] ${message.syncStatus === 'failed' ? 'text-red-600' : 'text-stone-400'}`}>{message.syncStatus === 'unlinked' ? 'Site only' : message.syncStatus === 'pending' ? 'Sending to Discord…' : message.syncStatus === 'failed' ? 'Discord delivery failed' : 'Synced'}</div>}
+            <div className="my-1 flex flex-wrap gap-1">{(message.reactions ?? []).map((reaction) => <button key={reaction.emoji} aria-label={reaction.emoji + ' reaction'} className={'flex items-center gap-1 rounded-full border px-1.5 py-0.5 text-[9px] ' + (myReactions.has(message.id + ':' + reaction.emoji) ? 'border-indigo-300 bg-indigo-50' : 'border-stone-200 bg-white')} onMouseEnter={(event) => {
+              const rect = event.currentTarget.getBoundingClientRect()
+              setReactionHover({
+                messageId: message.id,
+                emoji: reaction.emoji,
+                participants: reaction.participants ?? [],
+                top: Math.max(8, Math.min(window.innerHeight - 48, rect.bottom + 6)),
+                left: Math.max(8, Math.min(window.innerWidth - 240, rect.left)),
+              })
+            }} onMouseLeave={() => setReactionHover(undefined)} onClick={() => void react(message, reaction.emoji)}>{renderEmoji(reaction.emoji)} {reaction.count}</button>)}</div>
+            {message.origin === 'website' && message.syncStatus !== 'synced' && <div className={`text-[8px] ${message.syncStatus === 'failed' ? 'text-red-600' : 'text-stone-400'}`}>{message.syncStatus === 'unlinked' ? 'Site only' : message.syncStatus === 'pending' ? 'Syncing…' : 'Discord delivery failed'}</div>}
           </div>
         </div>
       </article>
@@ -317,11 +367,11 @@ export default function CanvasChat() {
     <div className="min-h-4 px-3 text-[9px] italic text-stone-400">{typingLabel([...typers.values()].map((typer) => typer.name))}</div>
     <div className="flex items-center justify-between border-t border-rule px-3 pt-2">
       {identity ? <span className="text-[9px] text-stone-400">Posting as {identity.displayName}</span> : <label className="flex items-center gap-1 text-[9px] text-stone-400">Posting as <input className="w-28 rounded border border-stone-200 bg-white px-1.5 py-1 text-[9px] text-stone-700" maxLength={32} value={guestName} onChange={(event) => setGuestName(event.target.value)} onBlur={() => setGuestName(saveGuestName(guestName))}/></label>}
-      <DiscordIdentity compact onChange={(next) => { setIdentity(next); setViewerId(next ? 'discord:' + next.id : guestViewerId) }}/>
+      <DiscordIdentity compact onChange={(next) => setIdentity(next)}/>
     </div>
     <form className="m-3 mt-2 rounded-lg border border-stone-300 bg-white p-2" onSubmit={(event) => { event.preventDefault(); void send() }}>
       {replyTo && <div className="-mx-2 -mt-2 mb-2 flex items-center gap-2 rounded-t-lg border-b border-stone-200 bg-stone-50 px-2 py-1.5 text-[9px]">{replyTo.authorAvatar ? <img className="size-5 rounded-full" src={replyTo.authorAvatar} alt=""/> : <span className="grid size-5 place-items-center rounded-full bg-stone-200 text-[7px]">{replyTo.authorName.slice(0, 2).toUpperCase()}</span>}<MessageCircleReply size={11} className="shrink-0 text-indigo-500"/><button type="button" className="min-w-0 flex-1 truncate border-0 bg-transparent text-left text-stone-500" onClick={() => jumpToMessage(replyTo.id)}>Replying to <strong className="text-stone-700">{replyTo.authorName}</strong> · {replyTo.content || 'Attachment'}</button><button type="button" className="grid size-5 place-items-center border-0 bg-transparent text-stone-400" onClick={() => setReplyTo(undefined)}>×</button></div>}
-      <textarea className="h-14 w-full resize-none border-0 bg-transparent text-[11px] outline-none" maxLength={2000} placeholder="Message this canvas and Discord…" value={content} onChange={(event) => { setContent(event.target.value); announceTyping() }}/>
+      <textarea ref={composerRef} rows={1} className="w-full resize-none border-0 bg-transparent text-[11px] outline-none" style={{ overflowY: 'hidden' }} maxLength={2000} placeholder="Message this canvas and Discord…" value={content} onChange={(event) => { setContent(event.target.value); announceTyping() }}/>
       {uploads.length > 0 && <div className="mb-1 flex flex-wrap gap-1">{uploads.map((file) => <button type="button" className="rounded bg-stone-100 px-1.5 py-1 text-[8px]" key={file.id} onClick={() => setUploads((current) => current.filter((item) => item.id !== file.id))}>{file.name} ×</button>)}</div>}
       <div className="flex items-center justify-between"><span className="text-[8px] text-stone-400">{content.length}/2000</span><div className="flex items-center gap-1"><input ref={fileInput} type="file" multiple hidden onChange={(event) => void uploadFiles(event.target.files)}/><button type="button" className="grid size-7 place-items-center rounded-md border-0 bg-stone-100 text-stone-600 disabled:opacity-40" disabled={uploading || uploads.length >= 10} onClick={() => fileInput.current?.click()} aria-label="Attach files"><Paperclip size={13}/></button><button className="grid size-7 place-items-center rounded-md border-0 bg-forest text-white disabled:opacity-40" disabled={(!content.trim() && !uploads.length) || sending || uploading} aria-label="Send message"><Send size={13}/></button></div></div>
     </form>
@@ -333,13 +383,23 @@ export default function CanvasChat() {
         else setDiscordAuthorization(result.authorizationUrl ?? '')
       })
     }}/>
+    {reactionHover && createPortal(<div className="fixed z-[1000] w-60 rounded-lg border border-stone-200 bg-white px-2 py-1.5 text-[10px] shadow-xl" style={{ top: reactionHover.top, left: reactionHover.left }}>
+      <div className="font-semibold text-stone-700">{renderEmoji(reactionHover.emoji)} Reaction</div>
+      <div className="mt-1 truncate text-stone-500">{reactionHover.participants.length ? reactionHover.participants.join(', ') : 'No participants'}</div>
+    </div>, document.body)}
     {popover && createPortal(popover.type === 'emoji'
-      ? <div className="fixed z-[1000] h-72 w-72 overflow-y-auto rounded-xl border border-stone-200 bg-white p-3 shadow-xl" style={{ top: popover.top, right: popover.right }}>{EMOJI_GROUPS.map(([label, emojis]) => <section className="mb-3" key={label}><h4 className="mb-1 text-[9px] font-bold uppercase tracking-wide text-stone-400">{label}</h4><div className="grid grid-cols-8 gap-0.5">{emojis.split(' ').map((emoji) => <button className="grid size-7 place-items-center rounded border-0 bg-transparent text-base hover:bg-stone-100" key={label + emoji} onClick={() => { void react(popover.message, emoji); setPopover(undefined) }}>{emoji}</button>)}</div></section>)}</div>
-      : <div className="fixed z-[1000] w-44 rounded-lg border border-stone-200 bg-white p-1 text-[10px] shadow-xl" style={{ top: popover.top, right: popover.right }}>
-        <button className="flex w-full items-center gap-2 rounded border-0 bg-transparent px-2 py-2 text-left hover:bg-stone-100" onClick={() => void copyMessageLink(popover.message)}><Link2 size={13}/> Copy message link</button>
-        <button className="flex w-full items-center gap-2 rounded border-0 bg-transparent px-2 py-2 text-left hover:bg-stone-100" onClick={() => saveAsResource(popover.message)}><BookmarkPlus size={13}/> Save as resource</button>
-        {ownsMessage(popover.message.authorId, viewerId) && <button className="flex w-full items-center gap-2 rounded border-0 bg-transparent px-2 py-2 text-left text-red-600 hover:bg-red-50" onClick={() => void deleteMessage(popover.message)}><Trash2 size={13}/> Delete message</button>}
+      ? <div ref={popoverRef} className="fixed z-[1000] h-72 w-72 overflow-y-auto rounded-xl border border-stone-200 bg-white p-3 shadow-xl" style={{ top: popover.top, left: popover.left }}>{EMOJI_GROUPS.map(([label, emojis]) => <section className="mb-3" key={label}><h4 className="mb-1 text-[9px] font-bold uppercase tracking-wide text-stone-400">{label}</h4><div className="grid grid-cols-8 gap-0.5">{emojis.split(' ').map((emoji) => <button className="grid size-7 place-items-center rounded border-0 bg-transparent text-base hover:bg-stone-100" key={label + emoji} onClick={() => { void react(popover.message, emoji); setPopover(undefined) }}>{emoji}</button>)}</div></section>)}</div>
+      : <div ref={popoverRef} className="fixed z-[1000] w-48 rounded-lg border border-stone-200 bg-white p-1 text-[10px] shadow-xl" style={{ top: popover.top, left: popover.left }}>
+        <button className="flex w-full items-center gap-2 rounded border-0 bg-transparent px-2 py-2 text-left hover:bg-stone-100" onClick={() => { void copyMessageLink(popover.message); setPopover(undefined) }}><Link2 size={13}/> Copy message link</button>
+        {canModerate && <button className="flex w-full items-center gap-2 rounded border-0 bg-transparent px-2 py-2 text-left hover:bg-stone-100" onClick={() => { saveAsResource(popover.message); setPopover(undefined) }}><BookmarkPlus size={13}/> Save as resource</button>}
+        {canModerate && <button className="flex w-full items-center gap-2 rounded border-0 bg-transparent px-2 py-2 text-left text-red-600 hover:bg-red-50" onClick={() => void deleteMessage(popover.message)}><Trash2 size={13}/> Delete message</button>}
       </div>, document.body)}
+    {headerMenu && createPortal(<div ref={headerMenuRef} className="fixed z-[1000] w-56 rounded-lg border border-stone-200 bg-white p-1 text-[10px] shadow-xl" style={{ top: headerMenu.top, left: headerMenu.left }}>
+      {discordInvite && <a className="flex w-full items-center gap-2 rounded border-0 bg-transparent px-2 py-2 text-left hover:bg-stone-100" href={discordInvite} target="_blank" rel="noreferrer" onClick={() => setHeaderMenu(undefined)}>Join Discord server <ExternalLink size={13}/></a>}
+      {!discordInvite && discordAuthorization && <a className="flex w-full items-center gap-2 rounded border-0 bg-transparent px-2 py-2 text-left hover:bg-stone-100" href={discordAuthorization} target="_blank" rel="noreferrer" onClick={() => setHeaderMenu(undefined)}>Join Discord server <ExternalLink size={13}/></a>}
+      {canModerate && <button className="flex w-full items-center gap-2 rounded border-0 bg-transparent px-2 py-2 text-left hover:bg-stone-100" onClick={() => { void saveConversation(); setHeaderMenu(undefined) }} disabled={saveState !== 'idle'}>{saveState === 'saving' ? 'Saving…' : saveState === 'saved' ? 'Saved to resources' : saveState === 'error' ? 'Save failed' : <>Save conversation <BookmarkPlus size={13}/></>}</button>}
+      <button className="flex w-full items-center gap-2 rounded border-0 bg-transparent px-2 py-2 text-left hover:bg-stone-100" onClick={() => { setConnectOpen(true); setHeaderMenu(undefined) }}>Change channel</button>
+    </div>, document.body)}
   </div>
 }
 
@@ -393,9 +453,4 @@ function focusMessageWhenVisible(id: string, attempts = 8, onVisible?: () => voi
   element.scrollIntoView({ behavior, block: 'center' })
   element.animate([{ backgroundColor: '#fef3c7' }, { backgroundColor: 'transparent' }], { duration: 1_800, easing: 'ease-out' })
   onVisible?.()
-}
-
-function ownsMessage(authorId: string, viewerId: string) {
-  const normalize = (value: string) => value.startsWith('discord:') ? value.slice(8) : value
-  return Boolean(viewerId) && normalize(authorId) === normalize(viewerId)
 }

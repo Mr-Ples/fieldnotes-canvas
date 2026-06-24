@@ -180,7 +180,8 @@ export class CanvasRoom extends DurableObject<Env> {
   }
 
   async setDiscordChannel(channelId: string, guildId: string, inviteUrl?: string): Promise<void> {
-    this.ctx.storage.sql.exec("INSERT OR REPLACE INTO config(key, value) VALUES ('discord', ?)", JSON.stringify({ channelId, guildId, inviteUrl }))
+    const current = await this.getDiscordChannel()
+    this.ctx.storage.sql.exec("INSERT OR REPLACE INTO config(key, value) VALUES ('discord', ?)", JSON.stringify({ ...(current ?? {}), channelId, guildId, inviteUrl }))
     this.broadcast({ type: 'linked', channelId, guildId })
   }
 
@@ -189,9 +190,28 @@ export class CanvasRoom extends DurableObject<Env> {
     if (current?.channelId === channelId) this.ctx.storage.sql.exec("DELETE FROM config WHERE key = 'discord'")
   }
 
-  async getDiscordChannel(): Promise<{ channelId: string; guildId: string; inviteUrl?: string } | null> {
+  async getDiscordChannel(): Promise<{ channelId: string; guildId: string; inviteUrl?: string; channelName?: string; ownerToken?: string } | null> {
     const value = this.ctx.storage.sql.exec<{ value: string }>("SELECT value FROM config WHERE key = 'discord'").toArray()[0]?.value
-    return value ? JSON.parse(value) as { channelId: string; guildId: string; inviteUrl?: string } : null
+    return value ? JSON.parse(value) as { channelId: string; guildId: string; inviteUrl?: string; channelName?: string; ownerToken?: string } : null
+  }
+
+  async getOwnerToken(): Promise<string | null> {
+    const value = this.ctx.storage.sql.exec<{ value: string }>("SELECT value FROM config WHERE key = 'owner'").toArray()[0]?.value
+    return value ? JSON.parse(value) as string : null
+  }
+
+  async claimOwnerToken(token: string): Promise<boolean> {
+    const current = await this.getOwnerToken()
+    if (current) return current === token
+    this.ctx.storage.sql.exec("INSERT OR REPLACE INTO config(key, value) VALUES ('owner', ?)", JSON.stringify(token))
+    return true
+  }
+
+  async setDiscordChannelName(channelId: string, channelName: string): Promise<void> {
+    const current = await this.getDiscordChannel()
+    if (!current?.channelId) return
+    if (current.channelId !== channelId) return
+    this.ctx.storage.sql.exec("INSERT OR REPLACE INTO config(key, value) VALUES ('discord', ?)", JSON.stringify({ ...(current ?? {}), channelName }))
   }
 
   async markDelivered(id: string, discordMessageId: string): Promise<void> {
@@ -218,10 +238,20 @@ export class CanvasRoom extends DurableObject<Env> {
   async deleteOwnMessage(messageId: string, userId: string): Promise<ChatMessage | null> {
     const row = this.ctx.storage.sql.exec<MessageRow>('SELECT * FROM messages WHERE id = ?', messageId).toArray()[0]
     if (!row || normalizeAuthorId(row.author_id) !== normalizeAuthorId(userId)) return null
-    const message = toMessage(row, this.reactionsFor(messageId))
-    this.ctx.storage.sql.exec('DELETE FROM reactions WHERE message_id = ?', messageId)
-    this.ctx.storage.sql.exec('DELETE FROM messages WHERE id = ?', messageId)
-    this.broadcast({ type: 'delete', messageId })
+    return this.deleteMessageRow(row)
+  }
+
+  async deleteAnyMessage(messageId: string): Promise<ChatMessage | null> {
+    const row = this.ctx.storage.sql.exec<MessageRow>('SELECT * FROM messages WHERE id = ?', messageId).toArray()[0]
+    if (!row) return null
+    return this.deleteMessageRow(row)
+  }
+
+  private deleteMessageRow(row: MessageRow): ChatMessage {
+    const message = toMessage(row, this.reactionsFor(row.id))
+    this.ctx.storage.sql.exec('DELETE FROM reactions WHERE message_id = ?', row.id)
+    this.ctx.storage.sql.exec('DELETE FROM messages WHERE id = ?', row.id)
+    this.broadcast({ type: 'delete', messageId: row.id })
     return message
   }
 

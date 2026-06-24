@@ -212,8 +212,21 @@ async function canvasChat(request: Request, env: Env, canvasId: string, action: 
   }
   if (request.method === 'GET') {
     const before = Number(new URL(request.url).searchParams.get('before')) || undefined
-    const [messages, discord, identity] = await Promise.all([room.listMessages(50, before), room.getDiscordChannel(), websiteIdentity(request, env, actor)])
-    return json({ messages, discord, viewerId: identity.authorId })
+    const [messages, storedDiscord, identity] = await Promise.all([room.listMessages(50, before), room.getDiscordChannel(), websiteIdentity(request, env, actor)])
+    let discord = storedDiscord
+    if (discord && !discord.channelName) {
+      try {
+        const response = await discordFetch(env, '/channels/' + discord.channelId)
+        if (response.ok) {
+          const channel = JSON.parse(await readBoundedText(response, 64_000)) as DiscordChannel
+          discord = { ...discord, channelName: channel.name || 'Unnamed channel' }
+          await room.setDiscordChannelName(discord.channelId, discord.channelName)
+        }
+      } catch { /* Ignore name lookup failures. */ }
+    }
+    const ownerToken = request.headers.get('x-fieldnotes-owner-token')?.slice(0, 128) ?? ''
+    const canModerate = ownerToken ? await room.claimOwnerToken(ownerToken) : false
+    return json({ messages, discord, canModerate })
   }
   if (request.method !== 'POST') return json({ error: 'Method not allowed' }, 405)
   const body = await readJson<{ content?: string; replyTo?: string; guestName?: string; attachments?: Array<{ id?: string; name?: string; url?: string; contentType?: string }> }>(request)
@@ -261,9 +274,10 @@ async function canvasReaction(request: Request, env: Env, canvasId: string, mess
 
 async function deleteCanvasMessage(request: Request, env: Env, canvasId: string, messageId: string, actor: string) {
   if (!/^[a-zA-Z0-9_-]{1,100}$/.test(canvasId)) return json({ error: 'Invalid canvas' }, 400)
-  const identity = await websiteIdentity(request, env, actor)
-  const message = await env.CANVAS_ROOMS.getByName(canvasId).deleteOwnMessage(messageId, identity.authorId)
-  if (!message) return json({ error: 'Message not found or you do not own it' }, 403)
+  const ownerToken = request.headers.get('x-fieldnotes-owner-token')?.slice(0, 128) ?? ''
+  if (!ownerToken || !(await env.CANVAS_ROOMS.getByName(canvasId).claimOwnerToken(ownerToken))) return json({ error: 'Only the page owner can delete messages' }, 403)
+  const message = await env.CANVAS_ROOMS.getByName(canvasId).deleteAnyMessage(messageId)
+  if (!message) return json({ error: 'Message not found' }, 404)
   if (message.discordChannelId && message.discordMessageId) {
     await env.DISCORD_OUTBOUND.send({ type: 'delete', channelId: message.discordChannelId, discordMessageId: message.discordMessageId, origin: message.origin } satisfies DiscordQueueMessage)
   }
@@ -290,14 +304,14 @@ function allowedMediaUrl(value: string, env: Env) {
 }
 
 async function linkDiscordChannel(request: Request, env: Env) {
-  const body = await verifiedBridgeJson<{ canvasId?: string; channelId?: string; guildId?: string }>(request, env)
+  const body = await verifiedBridgeJson<{ canvasId?: string; channelId?: string; guildId?: string; channelName?: string }>(request, env)
   if (!body.canvasId || !body.channelId || !body.guildId || !/^[a-zA-Z0-9_-]{1,100}$/.test(body.canvasId) || !/^\d{15,22}$/.test(body.channelId) || !/^\d{15,22}$/.test(body.guildId)) return json({ error: 'Invalid link request' }, 400)
   await ensureDiscordWebhook(env, body.channelId)
-  await setDiscordMapping(env, body.canvasId, body.channelId, body.guildId)
+  await setDiscordMapping(env, body.canvasId, body.channelId, body.guildId, body.channelName)
   return json({ linked: true })
 }
 
-async function setDiscordMapping(env: Env, canvasId: string, channelId: string, guildId: string) {
+async function setDiscordMapping(env: Env, canvasId: string, channelId: string, guildId: string, channelName?: string) {
   const room = env.CANVAS_ROOMS.getByName(canvasId)
   const channel = env.DISCORD_CHANNELS.getByName(channelId)
   const [previousChannel, previousCanvas] = await Promise.all([room.getDiscordChannel(), channel.getCanvas()])
@@ -305,6 +319,7 @@ async function setDiscordMapping(env: Env, canvasId: string, channelId: string, 
   if (previousCanvas && previousCanvas !== canvasId) await env.CANVAS_ROOMS.getByName(previousCanvas).clearDiscordChannel(channelId)
   const inviteUrl = await createDiscordInvite(env, channelId)
   await room.setDiscordChannel(channelId, guildId, inviteUrl)
+  if (channelName) await room.setDiscordChannelName(channelId, channelName)
   await channel.setCanvas(canvasId)
 }
 

@@ -21,6 +21,16 @@ export function setGuestName(name: string) {
   return getGuestName()
 }
 
+export function getOwnerToken() {
+  const key = 'fieldnotes:owner-token'
+  let token = localStorage.getItem(key)
+  if (!token) {
+    token = crypto.randomUUID()
+    localStorage.setItem(key, token)
+  }
+  return token
+}
+
 export async function completeChat(messages: ChatMessage[], signal?: AbortSignal) {
   const active = JSON.parse(localStorage.getItem('fieldnotes:active-canvas') ?? '{"id":"attention","title":"Designing for attention"}') as { id: string; title: string }
   const noteHtml = localStorage.getItem(`fieldnotes:notes-html:${active.id}`) ?? ''
