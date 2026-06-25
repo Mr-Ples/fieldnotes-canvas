@@ -1,4 +1,4 @@
-import { canvases, comments, resources, type Comment } from '../data'
+import { canvases, comments, projects, resources, type Comment } from '../data'
 import { seedAnnotations } from '../data/annotations'
 import { deepLinkTarget, linkKindForHref, type DeepLinkKind } from './deepLinks'
 import type { ChatMessage } from './api'
@@ -71,6 +71,7 @@ export function resolveLinkPreview(href: string): LinkPreview | null {
       kind,
       href: url.toString(),
       title: canvas.title,
+      subtitle: canvasSubtitle(canvas.id),
       tags,
       meta: `${canvas.emoji} Canvas · ${canvas.updated}`,
       ...canvasSection(canvas.id),
@@ -115,10 +116,32 @@ export function resolveLinkPreview(href: string): LinkPreview | null {
     } : { kind, href: url.toString(), title: target, meta: 'Annotation link' }
   }
   if (kind === 'heading') {
-    const heading = document.getElementById(target)
-    return heading ? { kind, href: url.toString(), title: cleanText(heading), meta: 'Heading', excerpt: headingSnippet(heading) } : { kind, href: url.toString(), title: target, meta: 'Heading link' }
+    const linkedCanvasId = url.searchParams.get('canvas') ?? undefined
+    const currentCanvasId = readStored<{ id?: string }>('fieldnotes:active-canvas', { id: canvases[0]?.id }).id
+    const heading = linkedCanvasId && linkedCanvasId !== currentCanvasId ? null : document.getElementById(target)
+    const stored = linkedCanvasId ? storedHeading(linkedCanvasId, target) : null
+    const canvas = linkedCanvasId ? readStored('fieldnotes:canvases', canvases).find((item) => item.id === linkedCanvasId) : undefined
+    const title = heading ? cleanText(heading) : stored?.title
+    return title ? {
+      kind,
+      href: url.toString(),
+      title,
+      meta: 'Heading',
+      subtitle: canvas && linkedCanvasId !== currentCanvasId ? canvas.title : undefined,
+      excerpt: heading ? headingSnippet(heading) : stored?.excerpt,
+    } : { kind, href: url.toString(), title: target, meta: 'Heading link', subtitle: canvas && linkedCanvasId !== currentCanvasId ? canvas.title : undefined }
   }
   return { kind, href: url.toString(), title: linkLabel(kind), meta: url.toString() }
+}
+
+export function canvasHeadings(canvasId: string) {
+  const html = canvasHtml(canvasId)
+  if (!html) return []
+  const doc = new DOMParser().parseFromString(html, 'text/html')
+  return Array.from(doc.body.querySelectorAll<HTMLElement>('h1, h2, h3')).map((heading, index) => {
+    if (!heading.id) heading.id = `document-heading-${index}`
+    return { id: heading.id, title: cleanText(heading), level: Number(heading.tagName.slice(1)) }
+  })
 }
 
 function decorateHeadings(root: HTMLElement) {
@@ -172,6 +195,14 @@ function readStored<T>(key: string, fallback: T) {
   }
 }
 
+function canvasSubtitle(canvasId: string) {
+  const canvas = readStored('fieldnotes:canvases', canvases).find((item) => item.id === canvasId)
+  if (canvas?.subtitle) return canvas.subtitle
+  const projectId = canvas?.projectId ?? (canvas?.group === 'Active' ? 'attention-project' : canvas?.group === 'Archive' ? 'fieldwork' : undefined)
+  const project = projectId ? readStored('fieldnotes:projects', projects).find((item) => item.id === projectId) : undefined
+  return project?.title ? `${project.title} canvas` : 'Canvas'
+}
+
 function firstSnippet(value?: string) {
   const normalized = value?.replace(/\s+/g, ' ').trim() ?? ''
   return normalized.length > 260 ? `${normalized.slice(0, 257)}...` : normalized
@@ -187,10 +218,7 @@ function findComment(items: Comment[], id: string): Comment | undefined {
 }
 
 function canvasSection(canvasId: string) {
-  const activeCanvasId = readStored<{ id?: string }>('fieldnotes:active-canvas', { id: canvases[0]?.id }).id
-  const liveHtml = activeCanvasId === canvasId ? document.querySelector<HTMLElement>('.note-editor')?.innerHTML : ''
-  const saved = localStorage.getItem(`fieldnotes:notes-html:${canvasId}`)
-  const html = liveHtml || saved || ''
+  const html = canvasHtml(canvasId)
   if (!html) return {}
   const doc = new DOMParser().parseFromString(html, 'text/html')
   const heading = doc.body.querySelector('h1, h2, h3, h4, h5, h6')
@@ -208,6 +236,21 @@ function canvasSection(canvasId: string) {
     sectionTitle: cleanText(heading),
     excerpt: firstSnippet(cleanText(paragraph)),
   }
+}
+
+function canvasHtml(canvasId: string) {
+  const activeCanvasId = readStored<{ id?: string }>('fieldnotes:active-canvas', { id: canvases[0]?.id }).id
+  const liveHtml = activeCanvasId === canvasId ? document.querySelector<HTMLElement>('.note-editor')?.innerHTML : ''
+  const saved = localStorage.getItem(`fieldnotes:notes-html:${canvasId}`)
+  return liveHtml || saved || ''
+}
+
+function storedHeading(canvasId: string, headingId: string) {
+  const html = canvasHtml(canvasId)
+  if (!html) return null
+  const doc = new DOMParser().parseFromString(html, 'text/html')
+  const heading = doc.getElementById(headingId)
+  return heading ? { title: cleanText(heading), excerpt: headingSnippet(heading) } : null
 }
 
 function headingSnippet(heading: Element) {

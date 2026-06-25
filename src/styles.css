@@ -86,12 +86,19 @@
   .new-canvas-shortcut { @apply text-[10px] opacity-55; }
   .new-project { @apply grid size-[39px] shrink-0 cursor-pointer place-items-center rounded-lg border border-rule bg-white/60 text-stone-500 hover:bg-stone-100 hover:text-forest; }
   .canvas-directory { @apply flex min-h-0 flex-1 flex-col; }
-  .canvas-list { @apply min-h-0 flex-1 overflow-y-auto pb-4; }
+  .canvas-list { @apply flex min-h-0 flex-1 flex-col overflow-y-auto pb-4; }
   .canvas-group-wrap { @apply px-2; }
-  .group-label { @apply flex items-center justify-between px-2.5 pt-3 pb-1 text-[10px] font-bold tracking-[.1em] text-stone-400 uppercase; }
-  .project-toggle { @apply flex min-w-0 flex-1 items-center gap-1 border-0 bg-transparent p-0 text-left uppercase; }
+  .group-label { @apply flex items-center justify-between gap-1 px-2.5 pt-3 pb-1 text-[10px] font-bold tracking-[.1em] text-stone-400 uppercase; }
+  .project-toggle { @apply -my-1.5 flex min-h-8 min-w-0 flex-1 items-center gap-1 rounded-md border-0 bg-transparent px-0 py-1.5 text-left uppercase hover:text-forest; }
   .project-toggle strong { @apply truncate; }
   .canvas-row { @apply relative mx-2; }
+  .canvas-row[draggable="true"] { @apply cursor-grab; }
+  .canvas-row[draggable="true"]:active { @apply cursor-grabbing; }
+  .canvas-project { @apply rounded-lg py-0.5; }
+  .canvas-project .canvas-row { @apply ml-5 mr-2; }
+  .canvas-project.is-drop-target, .canvas-standalone.is-drop-target { @apply bg-emerald-700/10 ring-1 ring-inset ring-emerald-700/35; }
+  .canvas-standalone { @apply mt-1 min-h-8 rounded-lg py-1; }
+  .canvas-standalone.is-drop-target { @apply min-h-40 flex-1; }
   .canvas-row .canvas-item { @apply mx-0 pr-14; }
   .directory-actions { @apply flex items-center gap-0.5; }
   .canvas-row > .directory-actions { @apply absolute top-1.5 right-1 opacity-0; }
@@ -117,6 +124,8 @@
   .canvas-directory.is-margin .canvas-row > .directory-actions { @apply top-0 right-0; }
   .canvas-directory.is-margin .group-label > .directory-actions { @apply flex opacity-100; }
   .canvas-directory.is-margin .group-label { @apply px-2 pt-4 pb-1; }
+  .canvas-directory.is-margin .canvas-project .canvas-row { @apply ml-5 mr-2; }
+  .canvas-directory.is-margin .margin-dock-button, .canvas-directory.is-margin .search-box .directory-menu-trigger { @apply size-8; }
   .canvas-directory.is-margin .document-outline a { @apply bg-transparent hover:bg-transparent hover:underline; }
   .canvas-directory.is-margin .document-outline a.is-active { @apply bg-sage text-forest no-underline; }
   .canvas-directory.is-margin .search-box .directory-menu-trigger { @apply text-stone-500 hover:bg-stone-100 hover:text-forest; }
@@ -155,6 +164,10 @@
   .doc-kicker { @apply text-[9px] font-bold tracking-[.13em] text-stone-400; }
   .document-head h1 { @apply my-2.5 font-serif text-[clamp(36px,4vw,52px)] leading-[1.05] font-semibold tracking-[-.025em] text-ink; }
   .document-head > p { @apply m-0 max-w-[650px] font-serif text-lg leading-relaxed font-medium text-stone-500; }
+  .canvas-title-input { @apply my-2.5 block w-full border-0 bg-transparent p-0 font-serif text-[clamp(36px,4vw,52px)] leading-[1.05] font-semibold text-ink outline-none; }
+  .canvas-subtitle-input { @apply block h-[4.8rem] w-full max-w-[650px] resize-none overflow-hidden border-0 bg-transparent p-0 font-serif text-lg leading-relaxed font-medium text-stone-500 outline-none; }
+  .canvas-subtitle-input { scrollbar-width: none; }
+  .canvas-subtitle-input::-webkit-scrollbar { display: none; }
   .tag-row { @apply mt-5 flex flex-wrap items-center gap-1.5; }
   .tag { @apply inline-flex items-center gap-1 rounded-full border border-stone-300 bg-stone-100 px-2 py-1 text-[10px] text-stone-600; }
   .tag button { @apply grid size-4 place-items-center rounded-full border-0 bg-transparent p-0 text-stone-400 hover:bg-stone-200 hover:text-stone-700; }
@@ -184,14 +197,14 @@
   .note-wrap.is-annotations-hidden .note-editor a:hover .note-link-marker, .note-wrap.is-annotations-hidden .note-editor a:focus-visible .note-link-marker { @apply opacity-70; }
   .link-preview-card { @apply fixed z-[1200] max-h-[min(430px,calc(100dvh-24px))] w-[min(352px,calc(100vw-24px))] overflow-y-auto overflow-x-hidden rounded-xl border border-stone-200 bg-white/95 p-3 text-left shadow-2xl backdrop-blur-sm; user-select: text; }
   .link-preview-head { @apply flex items-start justify-between gap-3; }
-  .link-preview-head strong { @apply block min-w-0 flex-1 truncate text-[12px] font-semibold text-ink; }
+  .link-preview-head strong { @apply block min-w-0 flex-1 truncate text-[14px] font-semibold leading-tight text-ink; }
   .link-preview-head span { @apply shrink-0 text-[8px] font-bold uppercase tracking-wider text-emerald-700; }
   .link-preview-unlink { @apply -mt-1 -mr-1 grid size-6 shrink-0 cursor-pointer place-items-center rounded-md border-0 bg-transparent text-stone-400 hover:bg-stone-100 hover:text-red-700; }
   .link-preview-author { @apply flex min-w-0 flex-1 items-center gap-2; }
   .link-preview-author img, .link-preview-author > span { @apply grid size-7 shrink-0 place-items-center rounded-full bg-indigo-100 object-cover text-[8px] font-bold text-indigo-700; }
-  .link-preview-card h4 { @apply my-2 font-serif text-[13px] leading-tight font-semibold text-ink; }
+  .link-preview-card h4 { @apply my-2 font-serif text-[15px] leading-tight font-semibold text-ink; }
   .link-preview-card p { @apply mt-2 mb-0 break-words text-[10px] leading-relaxed text-stone-600; }
-  .link-preview-subtitle { @apply font-serif text-[11px] text-stone-500; }
+  .link-preview-subtitle { @apply font-serif text-[12px] text-stone-500; }
   .link-preview-tags { @apply mt-2 flex flex-wrap gap-1; }
   .link-preview-tags span { @apply rounded-full border border-stone-200 bg-stone-50 px-1.5 py-0.5 text-[8px] text-stone-500; }
   .link-preview-card blockquote { @apply my-2 break-words border-l-2 border-amber-400 bg-amber-50 px-2 py-1 font-serif text-[10px] leading-relaxed italic text-stone-600; }

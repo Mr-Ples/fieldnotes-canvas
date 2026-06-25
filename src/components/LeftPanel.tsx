@@ -1,11 +1,12 @@
-import { useEffect, useState, type KeyboardEvent, type MouseEvent, type ReactNode } from 'react'
+import { useEffect, useState, type DragEvent, type KeyboardEvent, type MouseEvent, type ReactNode } from 'react'
 import { Bot, ChevronDown, ChevronRight, FileText, FolderPlus, Link2, MoreVertical, PanelLeft, Plus, Search, Send, Settings, Sparkles, Trash2 } from 'lucide-react'
-import { canvases as seedCanvases, projects as seedProjects, resources as seedResources, type Canvas } from '../data'
+import { canvases as seedCanvases, projects as seedProjects, resources as seedResources, type Canvas, type Project } from '../data'
 import { CopyLinkButton, IconButton } from './Primitives'
 import { useLocalStorage } from '../hooks/useLocalStorage'
 import { completeChat, type ChatMessage } from '../services/api'
 import { showConfirm, showPrompt, showToast } from './Popups'
 import { deepLinkKind, deepLinkTarget, navigateToDeepLink, scrollDeepLinkIntoView } from '../services/deepLinks'
+import { canvasHeadings } from '../services/linkContent'
 
 export function CanvasPanel({ margin = false, onDock }: { margin?: boolean; onDock?: () => void }) {
   const [query, setQuery] = useState('')
@@ -15,18 +16,28 @@ export function CanvasPanel({ margin = false, onDock }: { margin?: boolean; onDo
   const [headings, setHeadings] = useState<{ id: string; title: string; level: number }[]>([])
   const [activeHeading, setActiveHeading] = useState('')
   const [menu, setMenu] = useState<string | null>(null)
+  const [dragTarget, setDragTarget] = useState('')
   const [activeId, setActiveId] = useState(() => {
     const stored = localStorage.getItem('fieldnotes:active-canvas')
     return stored ? (JSON.parse(stored) as { id: string }).id : 'attention'
   })
   const normalized = canvases.map((canvas) => ({ ...canvas, projectId: canvas.projectId ?? (canvas.group === 'Active' ? 'attention-project' : canvas.group === 'Archive' ? 'fieldwork' : undefined) }))
   const filtered = normalized.filter((canvas) => canvas.title.toLowerCase().includes(query.toLowerCase()))
+  const activeCanvas = normalized.find((canvas) => canvas.id === activeId) ?? normalized[0]
+  const syncCanvases = (next: Canvas[]) => {
+    setCanvases(next)
+    window.dispatchEvent(new CustomEvent('fieldnotes:canvases-changed', { detail: next }))
+  }
+  const syncProjects = (next: Project[]) => {
+    setProjects(next)
+    window.dispatchEvent(new CustomEvent('fieldnotes:projects-changed', { detail: next }))
+  }
   const createCanvas = (projectId?: string) => {
     void (async () => {
       const title = await showPrompt({ title: 'New canvas', message: 'Name this canvas.', placeholder: 'Canvas name', confirmLabel: 'Create' })
       if (!title) return
       const canvas: Canvas = { id: crypto.randomUUID(), title: title.trim(), emoji: '◇', updated: 'Now', projectId }
-      setCanvases([canvas, ...canvases])
+      syncCanvases([canvas, ...canvases])
       selectCanvas(canvas)
       showToast('Canvas created')
     })()
@@ -37,8 +48,8 @@ export function CanvasPanel({ margin = false, onDock }: { margin?: boolean; onDo
       if (!title) return
       const project = { id: crypto.randomUUID(), title: title.trim() }
       const canvas: Canvas = { id: crypto.randomUUID(), title: 'Untitled canvas', emoji: '◇', updated: 'Now', projectId: project.id }
-      setProjects([project, ...projects])
-      setCanvases([canvas, ...canvases])
+      syncProjects([project, ...projects])
+      syncCanvases([canvas, ...canvases])
       selectCanvas(canvas)
       setCollapsed({ ...collapsed, [project.id]: false })
       showToast('Project created')
@@ -55,11 +66,24 @@ export function CanvasPanel({ margin = false, onDock }: { margin?: boolean; onDo
     return () => window.removeEventListener('fieldnotes:canvas-selected', selected)
   }, [])
   useEffect(() => {
+    const changed = (event: Event) => {
+      const next = (event as CustomEvent<Canvas[]>).detail
+      if (Array.isArray(next)) setCanvases(next)
+    }
+    window.addEventListener('fieldnotes:canvases-changed', changed)
+    return () => window.removeEventListener('fieldnotes:canvases-changed', changed)
+  }, [setCanvases])
+  useEffect(() => {
+    const changed = (event: Event) => {
+      const next = (event as CustomEvent<Project[]>).detail
+      if (Array.isArray(next)) setProjects(next)
+    }
+    window.addEventListener('fieldnotes:projects-changed', changed)
+    return () => window.removeEventListener('fieldnotes:projects-changed', changed)
+  }, [setProjects])
+  useEffect(() => {
     if (!margin) return
-    const read = () => setHeadings(Array.from(document.querySelectorAll<HTMLElement>('.note-editor h1, .note-editor h2, .note-editor h3')).map((heading, index) => {
-      if (!heading.id) heading.id = `document-heading-${index}`
-      return { id: heading.id, title: heading.textContent ?? '', level: Number(heading.tagName.slice(1)) }
-    }))
+    const read = () => setHeadings(canvasHeadings(activeId))
     read()
     const observer = new MutationObserver(read)
     const editor = document.querySelector('.note-editor')
@@ -97,7 +121,7 @@ export function CanvasPanel({ margin = false, onDock }: { margin?: boolean; onDo
     void (async () => {
       if (!await showConfirm({ title: 'Delete canvas?', message: `Delete “${canvas.title}”? This removes it from your local canvas list.`, confirmLabel: 'Delete canvas', cancelLabel: 'Keep canvas', tone: 'danger' })) return
       const next = canvases.filter((item) => item.id !== canvas.id)
-      setCanvases(next)
+      syncCanvases(next)
       setMenu(null)
       if (canvas.id === activeId && next[0]) selectCanvas(next[0])
       showToast('Canvas deleted')
@@ -110,11 +134,22 @@ export function CanvasPanel({ margin = false, onDock }: { margin?: boolean; onDo
       if (!project) return
       if (!await showConfirm({ title: 'Delete project?', message: `Delete “${project.title}” and ${projectCanvases.length} canvas${projectCanvases.length === 1 ? '' : 'es'}?`, confirmLabel: 'Delete project', cancelLabel: 'Keep project', tone: 'danger' })) return
       const nextCanvases = canvases.filter((canvas) => (canvas.projectId ?? (canvas.group === 'Active' ? 'attention-project' : canvas.group === 'Archive' ? 'fieldwork' : undefined)) !== projectId)
-      setProjects(projects.filter((item) => item.id !== projectId))
-      setCanvases(nextCanvases)
+      syncProjects(projects.filter((item) => item.id !== projectId))
+      syncCanvases(nextCanvases)
       setMenu(null)
       if (projectCanvases.some((canvas) => canvas.id === activeId) && nextCanvases[0]) selectCanvas(nextCanvases[0])
       showToast('Project deleted')
+    })()
+  }
+  const renameProject = (projectId: string) => {
+    void (async () => {
+      const project = projects.find((item) => item.id === projectId)
+      if (!project) return
+      const title = await showPrompt({ title: 'Rename project', message: 'Update this project name.', placeholder: 'Project name', confirmLabel: 'Rename', defaultValue: project.title })
+      if (!title?.trim()) return
+      syncProjects(projects.map((item) => item.id === projectId ? { ...item, title: title.trim() } : item))
+      setMenu(null)
+      showToast('Project renamed')
     })()
   }
   const scrollToHeading = (event: MouseEvent<HTMLAnchorElement>, id: string) => {
@@ -127,8 +162,38 @@ export function CanvasPanel({ margin = false, onDock }: { margin?: boolean; onDo
     scrollRoot.scrollTo({ top, behavior: 'smooth' })
     window.history.replaceState(null, '', `#${id}`)
   }
+  const dragCanvas = (event: DragEvent<HTMLElement>, canvas: Canvas) => {
+    event.dataTransfer.effectAllowed = 'move'
+    event.dataTransfer.setData('application/x-fieldnotes-canvas', canvas.id)
+  }
+  const moveCanvas = (canvasId: string, projectId?: string) => {
+    const stored = JSON.parse(localStorage.getItem('fieldnotes:canvases') ?? JSON.stringify(canvases)) as Canvas[]
+    const next = stored.map((canvas) => canvas.id === canvasId ? { ...canvas, projectId, group: undefined } : canvas)
+    const moved = next.find((canvas) => canvas.id === canvasId)
+    syncCanvases(next)
+    if (moved?.id === activeId) localStorage.setItem('fieldnotes:active-canvas', JSON.stringify(moved))
+    showToast(projectId ? 'Moved to project' : 'Moved to standalone')
+  }
+  const allowCanvasDrop = (event: DragEvent<HTMLElement>, target: string) => {
+    if (!Array.from(event.dataTransfer.types).includes('application/x-fieldnotes-canvas')) return
+    event.preventDefault()
+    event.dataTransfer.dropEffect = 'move'
+    if (dragTarget !== target) setDragTarget(target)
+  }
+  const leaveCanvasDrop = (event: DragEvent<HTMLElement>) => {
+    if (event.relatedTarget instanceof Node && event.currentTarget.contains(event.relatedTarget)) return
+    setDragTarget('')
+  }
+  const dropCanvas = (event: DragEvent<HTMLElement>, projectId?: string) => {
+    const canvasId = event.dataTransfer.getData('application/x-fieldnotes-canvas')
+    setDragTarget('')
+    if (!canvasId) return
+    event.preventDefault()
+    moveCanvas(canvasId, projectId)
+  }
   const ActionMenu = ({ id, label, children }: { id: string; label: string; children: ReactNode }) => <div className="directory-menu"><button className="directory-menu-trigger" aria-label={label} aria-expanded={menu === id} onClick={(event) => { event.stopPropagation(); setMenu(menu === id ? null : id) }}><MoreVertical size={14}/></button>{menu === id && <div className="directory-menu-popover" role="menu" onClick={() => setMenu(null)}>{children}</div>}</div>
-  const canvasRow = (canvas: Canvas) => <div className="canvas-row deep-link-target" id={`canvas-${canvas.id}`} key={canvas.id}><a href={`#canvas-${canvas.id}`} onClick={(event) => { event.preventDefault(); selectCanvas(canvas); navigateToDeepLink(`canvas-${canvas.id}`) }} className={`canvas-item ${canvas.id === activeId ? 'is-current' : ''}`}><span className="canvas-symbol">{canvas.emoji}</span><span className="canvas-name">{canvas.title}</span><time>{canvas.updated}</time></a><div className="directory-actions"><ActionMenu id={`canvas-${canvas.id}`} label={`${canvas.title} options`}><CopyLinkButton target={`canvas-${canvas.id}`}/><button role="menuitem" onClick={() => canvasAction(canvas, 'invite')}><Link2 size={13}/> Create invite link</button><button role="menuitem" onClick={() => canvasAction(canvas, 'settings')}><Settings size={13}/> Permissions</button><button role="menuitem" className="danger" onClick={() => deleteCanvas(canvas)}><Trash2 size={13}/> Delete canvas</button></ActionMenu></div></div>
+  const canvasRow = (canvas: Canvas) => <div className="canvas-row deep-link-target" id={`canvas-${canvas.id}`} key={canvas.id} draggable onDragStart={(event) => dragCanvas(event, canvas)} onDragEnd={() => setDragTarget('')}><a href={`#canvas-${canvas.id}`} onClick={(event) => { event.preventDefault(); selectCanvas(canvas); navigateToDeepLink(`canvas-${canvas.id}`) }} className={`canvas-item ${canvas.id === activeId ? 'is-current' : ''}`}><span className="canvas-symbol">{canvas.emoji}</span><span className="canvas-name">{canvas.title}</span><time>{canvas.updated}</time></a><div className="directory-actions"><ActionMenu id={`canvas-${canvas.id}`} label={`${canvas.title} options`}><CopyLinkButton target={`canvas-${canvas.id}`}/><button role="menuitem" onClick={() => canvasAction(canvas, 'invite')}><Link2 size={13}/> Create invite link</button><button role="menuitem" onClick={() => canvasAction(canvas, 'settings')}><Settings size={13}/> Permissions</button><button role="menuitem" className="danger" onClick={() => deleteCanvas(canvas)}><Trash2 size={13}/> Delete canvas</button></ActionMenu></div></div>
+  const standaloneCanvases = filtered.filter((canvas) => !canvas.projectId)
 
   return <div className={`canvas-directory ${margin ? 'is-margin' : ''}`}>
     <div className="search-box"><Search size={16} /><input aria-label="Search canvases" placeholder="Search canvases" value={query} onChange={(event) => setQuery(event.target.value)} />{margin ? <><button className="margin-dock-button" type="button" onClick={onDock} aria-label="Dock in left panel" title="Dock in left panel"><PanelLeft size={14}/></button><ActionMenu id="margin-actions" label="Canvas margin options"><button role="menuitem" onClick={() => createCanvas()}><Plus size={13}/> New canvas</button><button role="menuitem" onClick={createProject}><FolderPlus size={13}/> New project</button></ActionMenu></> : <kbd>⌘ K</kbd>}</div>
@@ -137,9 +202,9 @@ export function CanvasPanel({ margin = false, onDock }: { margin?: boolean; onDo
       <button className="new-project" onClick={createProject} aria-label="New project" title="New project"><FolderPlus size={16}/></button>
     </div>}
     <div className="canvas-list" aria-label="Canvas directory">
-      {projects.map((project) => { const projectCanvases = filtered.filter((canvas) => canvas.projectId === project.id); if (!projectCanvases.length) return null; const closed = collapsed[project.id]; return <section className="canvas-project" key={project.id}><div className="group-label"><button className="project-toggle" onClick={() => setCollapsed({ ...collapsed, [project.id]: !closed })}>{closed ? <ChevronRight size={14}/> : <ChevronDown size={14}/>}<strong>{project.title}</strong></button><span className="directory-actions"><ActionMenu id={`project-${project.id}`} label={`${project.title} options`}><button role="menuitem" onClick={() => createCanvas(project.id)}><Plus size={13}/> New canvas</button><button role="menuitem" onClick={() => projectAction(project.id, 'invite')}><Link2 size={13}/> Create invite link</button><button role="menuitem" onClick={() => projectAction(project.id, 'settings')}><Settings size={13}/> Permissions</button><button role="menuitem" className="danger" onClick={() => deleteProject(project.id)}><Trash2 size={13}/> Delete project</button></ActionMenu></span></div>{!closed && projectCanvases.map(canvasRow)}</section> })}
-      {filtered.filter((canvas) => !canvas.projectId).map(canvasRow)}
-      {margin && headings.length > 0 && <nav className="document-outline" aria-label="Canvas headings"><span>On this canvas</span>{headings.map((heading) => <a key={heading.id} className={`outline-level-${heading.level} ${activeHeading === heading.id ? 'is-active' : ''}`} href={`#${heading.id}`} onClick={(event) => scrollToHeading(event, heading.id)}>{heading.title}</a>)}</nav>}
+      {projects.map((project) => { const projectCanvases = filtered.filter((canvas) => canvas.projectId === project.id); if (!projectCanvases.length && query) return null; const closed = collapsed[project.id]; const dropId = `project-${project.id}`; return <section className={`canvas-project ${dragTarget === dropId ? 'is-drop-target' : ''}`} key={project.id} onDragOver={(event) => allowCanvasDrop(event, dropId)} onDragLeave={leaveCanvasDrop} onDrop={(event) => dropCanvas(event, project.id)}><div className="group-label"><button className="project-toggle" onClick={() => setCollapsed({ ...collapsed, [project.id]: !closed })}>{closed ? <ChevronRight size={14}/> : <ChevronDown size={14}/>}<strong>{project.title}</strong></button><span className="directory-actions"><ActionMenu id={`project-${project.id}`} label={`${project.title} options`}><button role="menuitem" onClick={() => createCanvas(project.id)}><Plus size={13}/> New canvas</button><button role="menuitem" onClick={() => renameProject(project.id)}><FileText size={13}/> Rename project</button><button role="menuitem" onClick={() => projectAction(project.id, 'invite')}><Link2 size={13}/> Create invite link</button><button role="menuitem" onClick={() => projectAction(project.id, 'settings')}><Settings size={13}/> Permissions</button><button role="menuitem" className="danger" onClick={() => deleteProject(project.id)}><Trash2 size={13}/> Delete project</button></ActionMenu></span></div>{!closed && projectCanvases.map(canvasRow)}</section> })}
+      <section className={`canvas-standalone ${dragTarget === 'standalone' ? 'is-drop-target' : ''}`} onDragOver={(event) => allowCanvasDrop(event, 'standalone')} onDragLeave={leaveCanvasDrop} onDrop={(event) => dropCanvas(event)}>{standaloneCanvases.map(canvasRow)}</section>
+      {margin && headings.length > 0 && <nav className="document-outline" aria-label="Canvas headings"><span>{activeCanvas?.title ?? 'Canvas'}</span>{headings.map((heading) => <a key={heading.id} className={`outline-level-${heading.level} ${activeHeading === heading.id ? 'is-active' : ''}`} href={`#${heading.id}`} onClick={(event) => scrollToHeading(event, heading.id)}>{heading.title}</a>)}</nav>}
     </div>
   </div>
 }

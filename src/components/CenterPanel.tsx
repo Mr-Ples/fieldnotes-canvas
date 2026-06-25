@@ -13,6 +13,8 @@ import { getCollaborationSettings, saveCollaborationSettings, type AccessMode, t
 import { deepLinkKind, deepLinkTarget, linkKindForHref, navigateToDeepLink, scrollDeepLinkIntoView } from '../services/deepLinks'
 import { decorateEditorLinks } from '../services/linkContent'
 
+const CANVAS_SUBTITLE_MAX_LENGTH = 180
+
 export default function CenterPanel() {
   const [tab, setTab] = useState<'notes' | 'resources'>('notes')
   const tabRef = useRef(tab)
@@ -53,6 +55,7 @@ export default function CenterPanel() {
     ? (projects.find((project) => project.id === collaborationScope.id)?.title ?? collaborationScope.id)
     : (storedCanvases().find((canvas) => canvas.id === collaborationScope.id)?.title ?? activeCanvas.title)
   const dialogPurpose = collaborationDialog === 'invite' ? 'Create invite link' : collaborationDialog === 'view' ? 'My permissions' : 'Permissions'
+  const canvasSubtitle = activeCanvas.subtitle ?? 'Notes on interfaces that protect focus, invite curiosity, and help ideas find each other.'
   const scrollRoot = () => centerRef.current?.closest<HTMLElement>('.app-shell') ?? null
   const rememberCurrentTabScroll = () => {
     const root = scrollRoot()
@@ -118,6 +121,18 @@ export default function CenterPanel() {
     window.addEventListener('hashchange', reveal)
     return () => window.removeEventListener('hashchange', reveal)
   }, [])
+  const updateCanvasMeta = (patch: Partial<Pick<Canvas, 'title' | 'subtitle'>>) => {
+    const nextActive = { ...activeCanvas, ...patch }
+    const stored = storedCanvases()
+    const nextCanvases = stored.some((canvas) => canvas.id === nextActive.id)
+      ? stored.map((canvas) => canvas.id === nextActive.id ? { ...canvas, ...patch } : canvas)
+      : [nextActive, ...stored]
+    setActiveCanvas(nextActive)
+    localStorage.setItem('fieldnotes:active-canvas', JSON.stringify(nextActive))
+    localStorage.setItem('fieldnotes:canvases', JSON.stringify(nextCanvases))
+    window.dispatchEvent(new CustomEvent('fieldnotes:canvases-changed', { detail: nextCanvases }))
+    window.dispatchEvent(new CustomEvent('fieldnotes:canvas-selected', { detail: nextActive }))
+  }
   const savePermissions = async () => {
     if (!await showConfirm({
       title: 'Save permission changes?',
@@ -192,6 +207,14 @@ export default function CenterPanel() {
   }
   useEffect(() => {
     const select = (event: Event) => setActiveCanvas((event as CustomEvent<Canvas>).detail)
+    const canvasesChanged = (event: Event) => {
+      const next = (event as CustomEvent<Canvas[]>).detail
+      const current = Array.isArray(next) ? next.find((canvas) => canvas.id === activeCanvas.id) : undefined
+      if (current) {
+        setActiveCanvas(current)
+        localStorage.setItem('fieldnotes:active-canvas', JSON.stringify(current))
+      }
+    }
     const moderation = (event: Event) => setCanModerate(Boolean((event as CustomEvent<boolean>).detail))
     const access = (event: Event) => setCanUseCanvas(Boolean((event as CustomEvent<{ canvas: boolean }>).detail.canvas))
     const permissions = (event: Event) => {
@@ -213,13 +236,14 @@ export default function CenterPanel() {
     }
     const closeAccountMenu = (event: PointerEvent) => { if (!accountMenuRef.current?.contains(event.target as Node)) setAccountMenu(false) }
     window.addEventListener('fieldnotes:canvas-selected', select)
+    window.addEventListener('fieldnotes:canvases-changed', canvasesChanged)
     window.addEventListener('fieldnotes:moderation-changed', moderation)
     window.addEventListener('fieldnotes:access-changed', access)
     window.addEventListener('fieldnotes:open-permissions', openPermissions)
     window.addEventListener('fieldnotes:permissions-changed', permissions)
     window.addEventListener('pointerdown', closeAccountMenu)
-    return () => { window.removeEventListener('fieldnotes:canvas-selected', select); window.removeEventListener('fieldnotes:moderation-changed', moderation); window.removeEventListener('fieldnotes:access-changed', access); window.removeEventListener('fieldnotes:open-permissions', openPermissions); window.removeEventListener('fieldnotes:permissions-changed', permissions); window.removeEventListener('pointerdown', closeAccountMenu) }
-  }, [])
+    return () => { window.removeEventListener('fieldnotes:canvas-selected', select); window.removeEventListener('fieldnotes:canvases-changed', canvasesChanged); window.removeEventListener('fieldnotes:moderation-changed', moderation); window.removeEventListener('fieldnotes:access-changed', access); window.removeEventListener('fieldnotes:open-permissions', openPermissions); window.removeEventListener('fieldnotes:permissions-changed', permissions); window.removeEventListener('pointerdown', closeAccountMenu) }
+  }, [activeCanvas.id])
 
   return <main ref={centerRef} className="center-panel" id="top">
     <div className="canvas-account-control"><div className="account-actions" ref={accountMenuRef}><DiscordIdentity compact onChange={setIdentity}/>{(identity || canModerate) && <IconButton label="Account and canvas options" onClick={() => setAccountMenu((open) => !open)}><MoreVertical size={18} /></IconButton>}{accountMenu && <div className="account-menu">
@@ -245,8 +269,8 @@ export default function CenterPanel() {
 
     <div className="document-head">
       <span className="doc-kicker">RESEARCH CANVAS · UPDATED JUST NOW</span>
-      <h1>{activeCanvas.title}</h1>
-      <p>Notes on interfaces that protect focus, invite curiosity, and help ideas find each other.</p>
+      <input className="canvas-title-input" aria-label="Canvas title" value={activeCanvas.title} onChange={(event) => updateCanvasMeta({ title: event.target.value })} />
+      <textarea className="canvas-subtitle-input" aria-label="Canvas subtitle" value={canvasSubtitle.slice(0, CANVAS_SUBTITLE_MAX_LENGTH)} onChange={(event) => updateCanvasMeta({ subtitle: event.target.value.slice(0, CANVAS_SUBTITLE_MAX_LENGTH) })} maxLength={CANVAS_SUBTITLE_MAX_LENGTH} rows={2} />
       <div className="tag-row">
         {tags.map((item) => <div key={item} className="tag"><span>#{item}</span>{canUseCanvas && <button type="button" onClick={() => setTags(tags.filter((tagItem) => tagItem !== item))} aria-label={`Remove tag ${item}`}><X size={11} /></button>}</div>)}
         {canUseCanvas && (!addingTag ? <button className="tag-add" type="button" onClick={() => setAddingTag(true)} aria-label="Add tag"><Plus size={13}/></button> : <form className="tag-form" onSubmit={(event) => { event.preventDefault(); if (tag.trim()) setTags([...tags, tag.trim()]); setTag(''); setAddingTag(false) }}>

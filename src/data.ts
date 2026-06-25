@@ -1,14 +1,14 @@
-export type Canvas = { id: string; title: string; emoji: string; updated: string; projectId?: string; group?: string }
+export type Canvas = { id: string; title: string; subtitle?: string; emoji: string; updated: string; projectId?: string; group?: string }
 export type Project = { id: string; title: string }
 export type Resource = { id: string; kind: 'article' | 'pdf' | 'video' | 'chat'; title: string; meta: string; accent: string; url?: string; content?: string }
 export type Comment = { id: string; author: string; authorId?: string; avatar?: string; initials: string; time: string; body: string; replies?: Comment[] }
 
 export const canvases: Canvas[] = [
-  { id: 'attention', title: 'Designing for attention', emoji: '✦', updated: 'Now', projectId: 'attention-project' },
-  { id: 'slow-web', title: 'The slow web', emoji: '◌', updated: '2h', projectId: 'attention-project' },
-  { id: 'tools-thought', title: 'Tools for thought', emoji: '⌁', updated: 'Tue' },
-  { id: 'ambient', title: 'Ambient interfaces', emoji: '◇', updated: 'Jun 18', projectId: 'fieldwork' },
-  { id: 'field-study', title: 'Field study / Berlin', emoji: '⌖', updated: 'Jun 12', projectId: 'fieldwork' },
+  { id: 'attention', title: 'Designing for attention', subtitle: 'Notes on interfaces that protect focus, invite curiosity, and help ideas find each other.', emoji: '✦', updated: 'Now', projectId: 'attention-project' },
+  { id: 'slow-web', title: 'The slow web', subtitle: 'Notes on slower patterns for reading, writing, and returning.', emoji: '◌', updated: '2h', projectId: 'attention-project' },
+  { id: 'tools-thought', title: 'Tools for thought', subtitle: 'A canvas for working notes about personal knowledge tools.', emoji: '⌁', updated: 'Tue' },
+  { id: 'ambient', title: 'Ambient interfaces', subtitle: 'Interface ideas that stay present without getting loud.', emoji: '◇', updated: 'Jun 18', projectId: 'fieldwork' },
+  { id: 'field-study', title: 'Field study / Berlin', subtitle: 'Observations, material, and follow-up questions from Berlin research.', emoji: '⌖', updated: 'Jun 12', projectId: 'fieldwork' },
 ]
 
 export const projects: Project[] = [{ id: 'attention-project', title: 'Attention research' }, { id: 'fieldwork', title: 'Fieldwork' }]

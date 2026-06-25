@@ -22,7 +22,13 @@ export function linkKindForHref(href: string, base = window.location.href): Deep
   try {
     const url = new URL(href, base)
     const current = new URL(base)
-    if (url.origin === current.origin && url.pathname === current.pathname && url.hash) return deepLinkKind(url.hash.slice(1))
+    if (url.origin === current.origin && url.pathname === current.pathname && url.hash) {
+      const target = url.hash.slice(1)
+      const kind = deepLinkKind(target)
+      if (kind !== 'unknown') return kind
+      if (url.searchParams.has('canvas')) return 'heading'
+      return kind
+    }
     return 'external'
   } catch { return 'unknown' }
 }
