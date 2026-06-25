@@ -14,7 +14,7 @@
 
 @layer base {
   * { @apply box-border; }
-  html, body, #root { @apply m-0 h-full; }
+  html, body, #root { @apply m-0 h-full overflow-x-hidden; }
   body { @apply min-w-80 overflow-hidden bg-warm font-sans text-ink antialiased; }
   button, input, textarea { font: inherit; }
   button, a { -webkit-tap-highlight-color: transparent; }
@@ -25,7 +25,7 @@
 }
 
 @layer components {
-  .app-shell { --canvas-scroll-offset: 101px; @apply relative mx-auto grid h-dvh max-w-[1920px] items-start overflow-y-auto bg-paper; grid-template-columns: var(--left-panel-width, 340px) minmax(0, 1fr) var(--right-panel-width, 360px); scroll-padding-top: var(--canvas-scroll-offset); }
+  .app-shell { --canvas-scroll-offset: 101px; @apply relative mx-auto grid h-dvh max-w-[1920px] items-start overflow-y-auto overflow-x-hidden bg-paper; grid-template-columns: var(--left-panel-width, 340px) minmax(0, 1fr) var(--right-panel-width, 360px); scroll-padding-top: var(--canvas-scroll-offset); }
   .side-panel { @apply sticky top-0 z-30 h-dvh min-w-0 overflow-visible bg-warm; }
   .side-panel-inner { @apply flex h-full min-w-0 flex-col overflow-hidden; }
   .left-panel { @apply border-r border-rule; grid-column: 1; }
@@ -320,10 +320,13 @@
   .app-shell::-webkit-scrollbar, .canvas-list::-webkit-scrollbar, .messages::-webkit-scrollbar, .docked-annotations::-webkit-scrollbar { width: 5px; height: 5px; }
   .app-shell::-webkit-scrollbar-track, .canvas-list::-webkit-scrollbar-track, .messages::-webkit-scrollbar-track, .docked-annotations::-webkit-scrollbar-track, .app-shell::-webkit-scrollbar-track-piece, .canvas-list::-webkit-scrollbar-track-piece, .messages::-webkit-scrollbar-track-piece, .docked-annotations::-webkit-scrollbar-track-piece { background: transparent; border: 0; }
   .app-shell::-webkit-scrollbar-thumb, .canvas-list::-webkit-scrollbar-thumb, .messages::-webkit-scrollbar-thumb, .docked-annotations::-webkit-scrollbar-thumb { border-radius: 999px; background: rgb(120 113 108 / .42); }
-  .app-shell::-webkit-scrollbar-button, .canvas-list::-webkit-scrollbar-button, .messages::-webkit-scrollbar-button, .docked-annotations::-webkit-scrollbar-button { display: none; width: 0; height: 0; }
+  .app-shell::-webkit-scrollbar-button, .canvas-list::-webkit-scrollbar-button, .messages::-webkit-scrollbar-button, .docked-annotations::-webkit-scrollbar-button, .app-shell::-webkit-scrollbar-button:single-button, .canvas-list::-webkit-scrollbar-button:single-button, .messages::-webkit-scrollbar-button:single-button, .docked-annotations::-webkit-scrollbar-button:single-button { display: none; width: 0; height: 0; -webkit-appearance: none; }
+  .app-shell::-webkit-scrollbar-corner, .canvas-list::-webkit-scrollbar-corner, .messages::-webkit-scrollbar-corner, .docked-annotations::-webkit-scrollbar-corner { background: transparent; }
   .app-shell.left-collapsed { grid-template-columns: 0 minmax(0, 1fr) var(--right-panel-width, 360px); } .app-shell.right-collapsed { grid-template-columns: var(--left-panel-width, 340px) minmax(0, 1fr) 0; }
   .app-shell.left-collapsed.right-collapsed { grid-template-columns: 0 minmax(0, 1fr) 0; }
   .app-shell.left-collapsed .left-panel, .app-shell.right-collapsed .right-panel { @apply invisible; }
+  .app-shell.right-collapsed:not(.left-collapsed) .document-head, .app-shell.right-collapsed:not(.left-collapsed) .content-tabs, .app-shell.right-collapsed:not(.left-collapsed) .note-wrap, .app-shell.right-collapsed:not(.left-collapsed) .resources-view, .app-shell.right-collapsed:not(.left-collapsed) .discussion-view { margin-left: clamp(36px, 7vw, 112px); margin-right: auto; }
+  .app-shell.right-collapsed:not(.left-collapsed) .canvas-account-control { right: auto; left: clamp(36px, 7vw, 112px); }
   .mobile-nav { @apply hidden; }
 }
 
