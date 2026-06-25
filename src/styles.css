@@ -381,7 +381,7 @@
   .app-shell.left-collapsed.right-collapsed { grid-template-columns: 0 minmax(0, 1fr) 0; }
   .app-shell.left-collapsed .left-panel, .app-shell.right-collapsed .right-panel { @apply invisible; }
   .app-shell.right-collapsed:not(.left-collapsed) .document-head, .app-shell.right-collapsed:not(.left-collapsed) .content-tabs, .app-shell.right-collapsed:not(.left-collapsed) .note-wrap, .app-shell.right-collapsed:not(.left-collapsed) .resources-view, .app-shell.right-collapsed:not(.left-collapsed) .discussion-view { margin-left: clamp(36px, 7vw, 112px); margin-right: auto; }
-  .app-shell.right-collapsed:not(.left-collapsed) .canvas-account-control { right: auto; left: clamp(36px, 7vw, 112px); }
+  .app-shell.right-collapsed:not(.left-collapsed) .canvas-account-control { right: auto; left: min(calc(100% - 36px), calc(clamp(36px, 7vw, 112px) + min(760px, calc(100% - 72px)))); transform: translateX(-100%); }
   .mobile-nav { @apply hidden; }
 }
 
@@ -428,6 +428,7 @@
     top: calc(env(safe-area-inset-top) + 1px);
     right: 4px;
     left: auto;
+    transform: none;
     z-index: 80;
   }
   .document-head, .content-tabs, .note-wrap, .resources-view, .discussion-view { width: 100%; }
