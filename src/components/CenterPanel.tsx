@@ -71,22 +71,14 @@ export default function CenterPanel() {
     if (next === tabRef.current) return
     rememberCurrentTabScroll()
     tabRef.current = next
+    window.dispatchEvent(new CustomEvent('fieldnotes:center-tab-changed', { detail: { tab: next } }))
     pendingScrollRestore.current = restore ? scrollByTab.current[next] : null
     setTab(next)
   }
   useEffect(() => {
-    const openNotes = () => openTab('notes', false)
-    const backToNotes = (event: Event) => {
-      if (tabRef.current !== 'resources') return
-      event.preventDefault()
-      openTab('notes', false)
-    }
+    const openNotes = (event: Event) => openTab('notes', Boolean((event as CustomEvent<{ restore?: boolean }>).detail?.restore))
     window.addEventListener('fieldnotes:open-notes-tab', openNotes)
-    window.addEventListener('fieldnotes:center-back', backToNotes)
-    return () => {
-      window.removeEventListener('fieldnotes:open-notes-tab', openNotes)
-      window.removeEventListener('fieldnotes:center-back', backToNotes)
-    }
+    return () => window.removeEventListener('fieldnotes:open-notes-tab', openNotes)
   }, [])
   useLayoutEffect(() => {
     tabRef.current = tab

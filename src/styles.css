@@ -352,6 +352,8 @@
   .toast { @apply rounded-xl border border-stone-200 bg-paper px-3 py-2.5 shadow-2xl; }
   .toast strong { @apply block text-[11px] font-semibold text-ink; }
   .toast span { @apply block mt-0.5 text-[10px] text-stone-500; }
+  .android-native-toast { @apply pointer-events-none fixed left-1/2 z-[1600] max-w-[min(320px,calc(100vw-48px))] -translate-x-1/2 rounded-full bg-neutral-900/90 px-5 py-2.5 text-center text-sm leading-snug text-white opacity-0 shadow-lg transition-opacity duration-150; bottom: calc(72px + env(safe-area-inset-bottom)); }
+  .android-native-toast.is-visible { @apply opacity-100; }
   .discord-panel { @apply px-6 py-14 text-center; }
   .discord-orb { @apply mx-auto grid size-12 place-items-center rounded-2xl bg-indigo-500 text-2xl font-bold text-white; }
   .discord-panel h3 { @apply mt-3.5 mb-2 font-serif text-[19px] font-semibold; } .discord-panel p { @apply text-[11px] leading-relaxed text-stone-500; }

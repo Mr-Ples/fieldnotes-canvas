@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type CSSProperties, type PointerEvent as ReactPointerEvent } from 'react'
+import { useEffect, useLayoutEffect, useRef, useState, type CSSProperties, type PointerEvent as ReactPointerEvent } from 'react'
 import { Files, MessageSquare, MessageSquareText, MessagesSquare, NotebookPen, PanelLeftClose, PanelRightClose } from 'lucide-react'
 import CenterPanel from './components/CenterPanel'
 import { CanvasPanel, ChatPanel } from './components/LeftPanel'
@@ -14,7 +14,7 @@ const MAX_PANEL_WIDTH = 520
 const MAX_RIGHT_PANEL_WIDTH = 512
 
 export default function App() {
-  const [mobileView, setMobileView] = useState<MobileView>(() => new URL(window.location.href).searchParams.has('discordConnect') ? 'discord' : deepLinkKind() === 'discord-message' ? 'discord' : deepLinkKind() === 'annotation' ? 'annotations' : 'notes')
+  const [mobileView, setMobileView] = useState<MobileView>('notes')
   const [layout, setLayout] = useState<DockLayout>(() => storedLayout())
   const [active, setActive] = useState<Record<DockLocation, DockTabId | null>>(() => ({ left: storedLayout().left[0] ?? null, right: storedLayout().right[0] ?? null, margin: storedLayout().margin[0] ?? null }))
   const [leftWidth, setLeftWidth] = useState(() => storedPanelWidth('fieldnotes:left-panel-width', 340))
@@ -24,7 +24,11 @@ export default function App() {
   const [annotationCount, setAnnotationCount] = useState(0)
   const [draggingTab, setDraggingTab] = useState<DockTabId | null>(null)
   const mobileViewRef = useRef(mobileView)
+  const centerTabRef = useRef<'notes' | 'resources'>('notes')
+  const mobileScrollByView = useRef<Record<MobileView, number>>({ notes: 0, canvases: 0, chat: 0, discord: 0, annotations: 0 })
+  const pendingMobileScrollRestore = useRef<number | null>(null)
   const lastBackExitPrompt = useRef(0)
+  const allowNativeExit = useRef(false)
   const leftOpen = layout.left.length > 0 && leftExpanded
   const rightOpen = layout.right.length > 0 && rightExpanded
   const marginOpen = !leftOpen && layout.margin.includes('canvases')
@@ -32,13 +36,23 @@ export default function App() {
 
   const locationOfTab = (tab: DockTabId) => (Object.keys(layout) as DockLocation[]).find((location) => layout[location].includes(tab)) ?? 'left'
   const mobilePanelForView = (view: MobileView) => view === 'notes' ? 'center' : locationOfTab(view)
+  const appScrollRoot = () => document.querySelector<HTMLElement>('.app-shell')
+  const rememberMobileScroll = () => {
+    const root = appScrollRoot()
+    if (root && isMobile()) mobileScrollByView.current[mobileViewRef.current] = root.scrollTop
+  }
 
   const selectMobileView = (view: MobileView, historyMode: 'push' | 'replace' | 'none' = 'push') => {
+    rememberMobileScroll()
+    pendingMobileScrollRestore.current = isMobile() ? mobileScrollByView.current[view] : null
+    mobileViewRef.current = view
     setMobileView(view)
-    if (!isMobile() || historyMode === 'none') return
-    const state = { ...(window.history.state ?? {}), fieldnotesMobileView: view }
-    if (historyMode === 'replace') window.history.replaceState(state, '', window.location.href)
-    else if (window.history.state?.fieldnotesMobileView !== view) window.history.pushState(state, '', window.location.href)
+  }
+
+  const selectMobileNotes = (historyMode: 'push' | 'replace' | 'none' = 'push', restore = true) => {
+    centerTabRef.current = 'notes'
+    window.dispatchEvent(new CustomEvent('fieldnotes:open-notes-tab', { detail: { restore } }))
+    selectMobileView('notes', historyMode)
   }
 
   const selectMobileDockTab = (tab: DockTabId, historyMode: 'push' | 'replace' | 'none' = 'push') => {
@@ -47,6 +61,13 @@ export default function App() {
     if (location === 'left') setLeftExpanded(true)
     if (location === 'right') setRightExpanded(true)
     selectMobileView(tab, historyMode)
+  }
+
+  const armMobileBackGuard = () => {
+    const boundaryState = { ...(window.history.state ?? {}) }
+    delete boundaryState.fieldnotesMobileGuard
+    window.history.replaceState({ ...boundaryState, fieldnotesMobileBoundary: true }, '', window.location.href)
+    window.history.pushState({ fieldnotesMobileGuard: true }, '', window.location.href)
   }
 
   const moveTab = (tab: DockTabId, location: DockLocation, index: number) => {
@@ -96,37 +117,68 @@ export default function App() {
   }, [])
   useEffect(() => { mobileViewRef.current = mobileView }, [mobileView])
   useEffect(() => {
+    const changed = (event: Event) => { centerTabRef.current = (event as CustomEvent<{ tab: 'notes' | 'resources' }>).detail.tab }
+    window.addEventListener('fieldnotes:center-tab-changed', changed)
+    return () => window.removeEventListener('fieldnotes:center-tab-changed', changed)
+  }, [])
+  useLayoutEffect(() => {
+    const top = pendingMobileScrollRestore.current
+    if (top === null) return
+    pendingMobileScrollRestore.current = null
+    requestAnimationFrame(() => {
+      const root = appScrollRoot()
+      if (root) root.scrollTop = top
+    })
+  }, [mobileView])
+  useLayoutEffect(() => {
     if (!isMobile()) return
-    if (!window.history.state?.fieldnotesMobileView) {
-      const boundaryState = { ...(window.history.state ?? {}) }
-      delete boundaryState.fieldnotesMobileView
-      window.history.replaceState({ ...boundaryState, fieldnotesMobileBoundary: true }, '', window.location.href)
-      window.history.pushState({ ...boundaryState, fieldnotesMobileView: mobileViewRef.current }, '', window.location.href)
+    selectMobileNotes('none', false)
+    armMobileBackGuard()
+    const initializeMobileBackState = () => {
+      allowNativeExit.current = false
+      lastBackExitPrompt.current = 0
+      selectMobileNotes('none', false)
+      armMobileBackGuard()
     }
+    const initializeWhenVisible = () => {
+      if (document.visibilityState === 'visible') initializeMobileBackState()
+    }
+    let initializeTimer: number | undefined
+    const frame = requestAnimationFrame(() => { initializeTimer = window.setTimeout(initializeMobileBackState, 80) })
     const onPopState = () => {
+      if (allowNativeExit.current) return
       if (mobileViewRef.current !== 'notes') {
+        armMobileBackGuard()
         lastBackExitPrompt.current = 0
-        window.dispatchEvent(new Event('fieldnotes:open-notes-tab'))
-        selectMobileView('notes', 'push')
+        selectMobileNotes('none', true)
         return
       }
-      const centerBack = new Event('fieldnotes:center-back', { cancelable: true })
-      if (!window.dispatchEvent(centerBack)) {
+      if (centerTabRef.current !== 'notes') {
+        armMobileBackGuard()
         lastBackExitPrompt.current = 0
-        selectMobileView('notes', 'push')
+        selectMobileNotes('none', true)
         return
       }
       const now = Date.now()
       if (now - lastBackExitPrompt.current < 1800) {
+        allowNativeExit.current = true
         window.history.back()
         return
       }
-      lastBackExitPrompt.current = now
-      selectMobileView('notes', 'push')
-      window.dispatchEvent(new CustomEvent('fieldnotes:popup-toast', { detail: { id: crypto.randomUUID(), title: 'Press back again to exit' } }))
+      armMobileBackGuard()
+      showNativeToast('Press back again to exit')
+      lastBackExitPrompt.current = Date.now()
     }
     window.addEventListener('popstate', onPopState)
-    return () => window.removeEventListener('popstate', onPopState)
+    window.addEventListener('pageshow', initializeMobileBackState)
+    document.addEventListener('visibilitychange', initializeWhenVisible)
+    return () => {
+      cancelAnimationFrame(frame)
+      if (initializeTimer !== undefined) window.clearTimeout(initializeTimer)
+      window.removeEventListener('popstate', onPopState)
+      window.removeEventListener('pageshow', initializeMobileBackState)
+      document.removeEventListener('visibilitychange', initializeWhenVisible)
+    }
   }, [])
   useEffect(() => {
     const onHash = () => {
@@ -165,8 +217,7 @@ export default function App() {
     const open = location === 'left' ? leftOpen : rightOpen
     const close = () => {
       if (isMobile()) {
-        window.dispatchEvent(new Event('fieldnotes:open-notes-tab'))
-        selectMobileView('notes', 'push')
+        selectMobileNotes('push', true)
       }
       else if (location === 'left') setLeftExpanded(false)
       else setRightExpanded(false)
@@ -183,7 +234,7 @@ export default function App() {
     <CenterPanel/>
     {layout.right.length > 0 && !rightOpen && <button className="panel-edge-opener right-edge-opener" onClick={() => setRightExpanded(true)} aria-label="Open right panel" title="Open right panel"/>}
     {!rightOpen && <DockDropEdge location="right" draggingTab={draggingTab} onDragChange={setDraggingTab} onDropTab={moveTab}/>} {panel('right')}
-    <nav className="mobile-nav" aria-label="Canvas areas"><button className={mobileView === 'canvases' ? 'active' : ''} onClick={() => selectMobileDockTab('canvases', 'push')}><Files size={19}/><span>Canvases</span></button><button className={mobileView === 'chat' ? 'active' : ''} onClick={() => selectMobileDockTab('chat', 'push')}><MessageSquare size={19}/><span>LLM chat</span></button><button className={mobileView === 'notes' ? 'active' : ''} onClick={() => { window.dispatchEvent(new Event('fieldnotes:open-notes-tab')); selectMobileView('notes', 'push') }}><NotebookPen size={19}/><span>Notes</span></button><button className={mobileView === 'annotations' ? 'active' : ''} onClick={() => selectMobileDockTab('annotations', 'push')}><MessageSquareText size={19}/><span>Annotations</span>{annotationCount > 0 && <i>{annotationCount}</i>}</button><button className={mobileView === 'discord' ? 'active' : ''} onClick={() => selectMobileDockTab('discord', 'push')}><MessagesSquare size={19}/><span>Discord</span></button></nav>
+    <nav className="mobile-nav" aria-label="Canvas areas"><button className={mobileView === 'canvases' ? 'active' : ''} onClick={() => selectMobileDockTab('canvases', 'push')}><Files size={19}/><span>Canvases</span></button><button className={mobileView === 'chat' ? 'active' : ''} onClick={() => selectMobileDockTab('chat', 'push')}><MessageSquare size={19}/><span>LLM chat</span></button><button className={mobileView === 'notes' ? 'active' : ''} onClick={() => selectMobileNotes('push', true)}><NotebookPen size={19}/><span>Notes</span></button><button className={mobileView === 'annotations' ? 'active' : ''} onClick={() => selectMobileDockTab('annotations', 'push')}><MessageSquareText size={19}/><span>Annotations</span>{annotationCount > 0 && <i>{annotationCount}</i>}</button><button className={mobileView === 'discord' ? 'active' : ''} onClick={() => selectMobileDockTab('discord', 'push')}><MessagesSquare size={19}/><span>Discord</span></button></nav>
     <PopupHost/>
   </div>
 }
@@ -191,3 +242,31 @@ export default function App() {
 function storedPanelWidth(key: string, fallback: number) { const value = Number(localStorage.getItem(key)); const maxWidth = key === 'fieldnotes:right-panel-width' ? MAX_RIGHT_PANEL_WIDTH : MAX_PANEL_WIDTH; return Number.isFinite(value) ? Math.max(280, Math.min(maxWidth, value)) : fallback }
 function storedPanelState(key: string, fallback: boolean) { const value = localStorage.getItem(key); return value === 'true' ? true : value === 'false' ? false : fallback }
 function storedLayout(): DockLayout { try { const value = JSON.parse(localStorage.getItem('fieldnotes:dock-layout') ?? '') as DockLayout; const all = [...value.left, ...value.right, ...value.margin]; return all.length === 4 && new Set(all).size === 4 ? value : defaultLayout } catch { return defaultLayout } }
+
+function showNativeToast(message: string) {
+  const host = window as Window & {
+    Android?: { showToast?: (message: string) => void; toast?: (message: string) => void };
+    nativeToast?: { show?: (message: string) => void };
+    Capacitor?: { Plugins?: { Toast?: { show?: (options: { text: string; duration?: 'short' | 'long' }) => Promise<void> | void } } };
+    webkit?: { messageHandlers?: { toast?: { postMessage: (message: string) => void } } };
+  }
+  if (typeof host.Android?.showToast === 'function') { host.Android.showToast(message); return }
+  if (typeof host.Android?.toast === 'function') { host.Android.toast(message); return }
+  if (typeof host.nativeToast?.show === 'function') { host.nativeToast.show(message); return }
+  if (typeof host.Capacitor?.Plugins?.Toast?.show === 'function') { void host.Capacitor.Plugins.Toast.show({ text: message, duration: 'short' }); return }
+  if (typeof host.webkit?.messageHandlers?.toast?.postMessage === 'function') { host.webkit.messageHandlers.toast.postMessage(message); return }
+  showAndroidStyleToast(message)
+}
+
+function showAndroidStyleToast(message: string) {
+  document.querySelectorAll('.android-native-toast').forEach((toast) => toast.remove())
+  const toast = document.createElement('div')
+  toast.className = 'android-native-toast'
+  toast.textContent = message
+  document.body.append(toast)
+  requestAnimationFrame(() => toast.classList.add('is-visible'))
+  window.setTimeout(() => {
+    toast.classList.remove('is-visible')
+    window.setTimeout(() => toast.remove(), 180)
+  }, 1800)
+}
