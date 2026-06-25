@@ -1,5 +1,5 @@
 import { useEffect, useLayoutEffect, useRef, useState, type ClipboardEvent, type CSSProperties, type FormEvent, type KeyboardEvent, type MouseEvent, type RefObject } from 'react'
-import { Bold, ChevronDown, Code2, Eye, EyeClosed, File, FileText, Heading2, Italic, Link2, List, LogOut, MessageCircle, MoreVertical, Plus, Quote, Reply, Send, Settings, Trash2, Upload, Video, X } from 'lucide-react'
+import { Bold, ChevronDown, Code2, Eye, EyeClosed, File, FileText, Heading1, Heading2, Heading3, Italic, Link2, List, LogOut, MessageCircle, MoreVertical, Plus, Quote, Reply, Send, Settings, Trash2, Upload, Video, X } from 'lucide-react'
 import { canvases, comments, projects, resources, type Canvas, type Comment } from '../data'
 import { Avatar, CopyLinkButton, IconButton, TabButton } from './Primitives'
 import { useLocalStorage } from '../hooks/useLocalStorage'
@@ -322,15 +322,19 @@ function PermissionSelect({ label, description, value, onChange }: { label: stri
 function Notes({ canvasId, setSaved, containerRef, canInteract, canSaveResource, annotationMode, onPendingHeadingScroll }: { canvasId: string; setSaved: (value: boolean) => void; containerRef: RefObject<HTMLElement | null>; canInteract: boolean; canSaveResource: boolean; annotationMode: 'track' | 'hidden'; onPendingHeadingScroll: (target: string) => void }) {
   const saveTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined)
   const editor = useRef<HTMLElement>(null)
+  const [hasTextSelection, setHasTextSelection] = useState(false)
+  const [activeBlockTag, setActiveBlockTag] = useState('')
   useEffect(() => {
     const saved = localStorage.getItem(`fieldnotes:notes-html:${canvasId}`)
     if (saved && editor.current) editor.current.innerHTML = saved
+    cleanupEditorStructure(editor.current)
     decorateEditorLinks(editor.current)
   }, [canvasId])
   useEffect(() => {
     const current = editor.current
     if (!current) return
     const mutated = () => {
+      cleanupEditorStructure(current)
       decorateEditorLinks(current)
       persistEditor()
     }
@@ -338,6 +342,7 @@ function Notes({ canvasId, setSaved, containerRef, canInteract, canSaveResource,
     return () => current.removeEventListener('fieldnotes:note-html-mutated', mutated)
   })
   const change = (event: FormEvent<HTMLElement>) => {
+    cleanupEditorStructure(event.currentTarget)
     decorateEditorLinks(event.currentTarget)
     setSaved(false)
     localStorage.setItem(`fieldnotes:notes-html:${canvasId}`, serializedEditorHtml(event.currentTarget))
@@ -350,6 +355,59 @@ function Notes({ canvasId, setSaved, containerRef, canInteract, canSaveResource,
     document.execCommand(command, false, value)
     decorateEditorLinks(editor.current)
     persistEditor()
+    updateSelectionState()
+  }
+  const selectedBlock = () => {
+    const range = selectedEditorRange()
+    if (!range || !editor.current) return null
+    let node: Node | null = range.startContainer
+    if (node.nodeType === Node.TEXT_NODE) node = node.parentElement
+    while (node && node !== editor.current) {
+      if (node instanceof HTMLElement && /^(H[1-6]|P|BLOCKQUOTE|PRE|LI|DIV)$/i.test(node.tagName)) return node
+      node = node.parentElement
+    }
+    return null
+  }
+  const selectedAncestor = (selector: string) => {
+    const range = selectedEditorRange()
+    if (!range || !editor.current) return null
+    let node: Node | null = range.startContainer
+    if (node.nodeType === Node.TEXT_NODE) node = node.parentElement
+    while (node && node !== editor.current) {
+      if (node instanceof HTMLElement && node.matches(selector)) return node
+      node = node.parentElement
+    }
+    return null
+  }
+  const toggleBlock = (tagName: 'h1' | 'h2' | 'h3' | 'blockquote' | 'pre') => {
+    const block = tagName === 'blockquote' || tagName === 'pre' ? selectedAncestor(tagName) : selectedBlock()
+    if (tagName === 'blockquote' && block instanceof HTMLQuoteElement) {
+      unwrapBlockquote(block)
+      cleanupEditorStructure(editor.current)
+      decorateEditorLinks(editor.current)
+      persistEditor()
+      return
+    }
+    if (block && (tagName === 'h1' || tagName === 'h2' || tagName === 'h3' || tagName === 'pre')) {
+      const nextTag = block.tagName.toLowerCase() === tagName ? 'p' : tagName
+      const replacement = replaceBlockElement(block, nextTag)
+      if (!replacement.textContent?.trim()) {
+        persistEditor()
+        updateSelectionState()
+        return
+      }
+      cleanupEditorStructure(editor.current)
+      decorateEditorLinks(editor.current)
+      persistEditor()
+      updateSelectionState()
+      return
+    }
+    format('formatBlock', block?.tagName.toLowerCase() === tagName ? 'p' : tagName)
+  }
+  const updateSelectionState = () => {
+    const range = selectedEditorRange()
+    setHasTextSelection(Boolean(range && !range.collapsed && range.toString().trim()))
+    setActiveBlockTag(selectedBlock()?.tagName.toLowerCase() ?? '')
   }
   const persistEditor = () => {
     if (!editor.current) return
@@ -388,8 +446,10 @@ function Notes({ canvasId, setSaved, containerRef, canInteract, canSaveResource,
     persistEditor()
   }
   const addLink = () => {
+    if (!hasTextSelection) return
     void (async () => {
       const range = selectedEditorRange()
+      if (!range || range.collapsed || !range.toString().trim()) return
       const href = await showPrompt({
         title: 'Add link',
         message: 'Paste a resource, comment, annotation, chat, or web URL.',
@@ -452,11 +512,28 @@ function Notes({ canvasId, setSaved, containerRef, canInteract, canSaveResource,
   const preventLinkMouseDown = (event: MouseEvent<HTMLElement>) => {
     if ((event.target as Element).closest<HTMLAnchorElement>('a[href]')) event.preventDefault()
   }
+  const handleKeyDown = (event: KeyboardEvent<HTMLElement>) => {
+    if (event.key !== 'Enter' || event.shiftKey || event.metaKey || event.ctrlKey || event.altKey) return
+    const block = selectedBlock()
+    if (!block?.matches('h1, h2, h3, h4, h5, h6')) return
+    event.preventDefault()
+    const paragraph = document.createElement('p')
+    paragraph.append(document.createElement('br'))
+    block.after(paragraph)
+    placeCaretAtStart(paragraph)
+    cleanupEditorStructure(editor.current)
+    decorateEditorLinks(editor.current)
+    persistEditor()
+  }
+  useEffect(() => {
+    document.addEventListener('selectionchange', updateSelectionState)
+    return () => document.removeEventListener('selectionchange', updateSelectionState)
+  })
   return <div className={`note-wrap ${annotationMode === 'hidden' ? 'is-annotations-hidden' : ''}`}>
-    <div className="format-bar" aria-label="Markdown formatting">
-      <IconButton label="Heading" onClick={() => format('formatBlock', 'h2')}><Heading2 size={16} /></IconButton><IconButton label="Bold" onClick={() => format('bold')}><Bold size={16} /></IconButton><IconButton label="Italic" onClick={() => format('italic')}><Italic size={16} /></IconButton><span className="divider"/><IconButton label="Link" onMouseDown={(event) => event.preventDefault()} onClick={addLink}><Link2 size={16} /></IconButton><IconButton label="Bullet list" onClick={() => format('insertUnorderedList')}><List size={16} /></IconButton><IconButton label="Quote" onClick={() => format('formatBlock', 'blockquote')}><Quote size={16} /></IconButton><IconButton label="Code" onClick={() => format('formatBlock', 'pre')}><Code2 size={16} /></IconButton><div className="format-spacer"/><span className="markdown-label">Markdown</span>
+    <div className="format-bar" aria-label="Markdown formatting" onMouseDown={(event) => event.preventDefault()}>
+      <IconButton label="Heading 1" className={activeBlockTag === 'h1' ? 'is-active' : ''} aria-pressed={activeBlockTag === 'h1'} onClick={() => toggleBlock('h1')}><Heading1 size={16} /></IconButton><IconButton label="Heading 2" className={activeBlockTag === 'h2' ? 'is-active' : ''} aria-pressed={activeBlockTag === 'h2'} onClick={() => toggleBlock('h2')}><Heading2 size={16} /></IconButton><IconButton label="Heading 3" className={activeBlockTag === 'h3' ? 'is-active' : ''} aria-pressed={activeBlockTag === 'h3'} onClick={() => toggleBlock('h3')}><Heading3 size={16} /></IconButton><IconButton label="Bold" onClick={() => format('bold')}><Bold size={16} /></IconButton><IconButton label="Italic" onClick={() => format('italic')}><Italic size={16} /></IconButton><span className="divider"/><IconButton label="Link" onMouseDown={(event) => event.preventDefault()} onClick={addLink} disabled={!hasTextSelection}><Link2 size={16} /></IconButton><IconButton label="Bullet list" onClick={() => format('insertUnorderedList')}><List size={16} /></IconButton><IconButton label="Quote" onClick={() => toggleBlock('blockquote')}><Quote size={16} /></IconButton><IconButton label="Code" onClick={() => toggleBlock('pre')}><Code2 size={16} /></IconButton><div className="format-spacer"/><span className="markdown-label">Markdown</span>
     </div>
-    <article ref={editor} className="note-editor" contentEditable={canInteract} suppressContentEditableWarning onInput={change} onPaste={linkifyPaste} onMouseDown={preventLinkMouseDown} onClick={followInternalLink} aria-label="Markdown notes" aria-readonly={!canInteract}>
+    <article ref={editor} className="note-editor" contentEditable={canInteract} suppressContentEditableWarning onInput={change} onPaste={linkifyPaste} onMouseDown={preventLinkMouseDown} onMouseUp={updateSelectionState} onKeyUp={updateSelectionState} onKeyDown={handleKeyDown} onClick={followInternalLink} aria-label="Markdown notes" aria-readonly={!canInteract}>
       <h2>Attention is not a resource to extract</h2>
       <p>Most software treats attention as something to capture. A better frame might be to see it as a living material—finite, rhythmic, and shaped by context.</p>
       <p>The question changes from <em>“how do we keep someone here?”</em> to <mark id="annotation-1" onClick={() => preserveEditorScroll(() => navigateToDeepLink('annotation-comment-1'))}>“what kind of attention does this moment deserve?”</mark></p>
@@ -484,8 +561,70 @@ function pastedLink(value: string) {
   } catch { return '' }
 }
 
+function unwrapBlockquote(blockquote: HTMLQuoteElement) {
+  const replacement = document.createDocumentFragment()
+  const children = Array.from(blockquote.childNodes)
+  const hasBlockChildren = children.some((node) => node instanceof HTMLElement && /^(P|DIV|UL|OL|PRE|H[1-6])$/i.test(node.tagName))
+  if (hasBlockChildren) {
+    children.forEach((node) => replacement.append(node))
+  } else {
+    const paragraph = document.createElement('p')
+    children.forEach((node) => paragraph.append(node))
+    replacement.append(paragraph)
+  }
+  blockquote.replaceWith(replacement)
+}
+
+function replaceBlockElement(block: HTMLElement, tagName: string) {
+  const replacement = document.createElement(tagName)
+  Array.from(block.attributes).forEach((attribute) => {
+    if (attribute.name !== 'id' && attribute.name !== 'class') replacement.setAttribute(attribute.name, attribute.value)
+  })
+  Array.from(block.childNodes).forEach((node) => {
+    if (node instanceof HTMLElement && node.classList.contains('heading-link')) return
+    replacement.append(node)
+  })
+  if (!replacement.textContent?.trim() && !replacement.querySelector('br')) replacement.append(document.createElement('br'))
+  block.replaceWith(replacement)
+  placeCaretAtEnd(replacement)
+  return replacement
+}
+
+function placeCaretAtStart(element: HTMLElement) {
+  element.focus()
+  const range = document.createRange()
+  range.setStart(element, 0)
+  range.collapse(true)
+  const selection = window.getSelection()
+  selection?.removeAllRanges()
+  selection?.addRange(range)
+}
+
+function placeCaretAtEnd(element: HTMLElement) {
+  element.focus()
+  const range = document.createRange()
+  range.selectNodeContents(element)
+  range.collapse(false)
+  const selection = window.getSelection()
+  selection?.removeAllRanges()
+  selection?.addRange(range)
+}
+
+function cleanupEditorStructure(root: HTMLElement | null) {
+  if (!root) return
+  root.querySelectorAll('.heading-link').forEach((link) => {
+    if (!link.parentElement?.matches('h1, h2, h3, h4, h5, h6')) link.remove()
+  })
+  root.querySelectorAll<HTMLElement>('h1, h2, h3, h4, h5, h6').forEach((heading) => {
+    const clone = heading.cloneNode(true) as HTMLElement
+    clone.querySelectorAll('.heading-link').forEach((link) => link.remove())
+    if (!clone.textContent?.trim()) heading.remove()
+  })
+}
+
 function serializedEditorHtml(root: HTMLElement) {
   const clone = root.cloneNode(true) as HTMLElement
+  cleanupEditorStructure(clone)
   clone.querySelectorAll('.note-link-marker').forEach((marker) => marker.remove())
   clone.querySelectorAll('.heading-link').forEach((link) => link.remove())
   return clone.innerHTML

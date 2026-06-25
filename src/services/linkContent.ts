@@ -138,16 +138,30 @@ export function canvasHeadings(canvasId: string) {
   const html = canvasHtml(canvasId)
   if (!html) return []
   const doc = new DOMParser().parseFromString(html, 'text/html')
-  return Array.from(doc.body.querySelectorAll<HTMLElement>('h1, h2, h3')).map((heading, index) => {
-    if (!heading.id) heading.id = `document-heading-${index}`
-    return { id: heading.id, title: cleanText(heading), level: Number(heading.tagName.slice(1)) }
+  const used = new Set(Array.from(doc.body.querySelectorAll<HTMLElement>('[id]')).filter((element) => !element.matches('h1, h2, h3')).map((element) => element.id))
+  return Array.from(doc.body.querySelectorAll<HTMLElement>('h1, h2, h3')).flatMap((heading, index) => {
+    const title = cleanText(heading)
+    if (!title) return []
+    if (!heading.id || used.has(heading.id)) heading.id = uniqueSlug(slugForHeading(title, index), used)
+    else used.add(heading.id)
+    return [{ id: heading.id, title, level: Number(heading.tagName.slice(1)) }]
   })
 }
 
 function decorateHeadings(root: HTMLElement) {
-  const used = new Set(Array.from(root.querySelectorAll<HTMLElement>('[id]')).map((element) => element.id))
+  root.querySelectorAll('.heading-link').forEach((link) => {
+    if (!link.parentElement?.matches('h1, h2, h3, h4, h5, h6')) link.remove()
+  })
+  const headingSelector = 'h1, h2, h3, h4, h5, h6'
+  const used = new Set(Array.from(root.querySelectorAll<HTMLElement>('[id]')).filter((element) => !element.matches(headingSelector)).map((element) => element.id))
   root.querySelectorAll<HTMLElement>('h1, h2, h3, h4, h5, h6').forEach((heading, index) => {
-    if (!heading.id) heading.id = uniqueSlug(root, slugForHeading(cleanText(heading), index), used)
+    const title = cleanText(heading)
+    if (!title) {
+      heading.remove()
+      return
+    }
+    if (!heading.id || used.has(heading.id)) heading.id = uniqueSlug(slugForHeading(title, index), used)
+    else used.add(heading.id)
     let link = heading.querySelector<HTMLAnchorElement>(':scope > .heading-link')
     if (!link) {
       link = document.createElement('a')
@@ -276,10 +290,10 @@ function slugForHeading(text: string, index: number) {
   return slug || `document-heading-${index}`
 }
 
-function uniqueSlug(root: HTMLElement, base: string, used: Set<string>) {
+function uniqueSlug(base: string, used: Set<string>) {
   let candidate = base
   let suffix = 2
-  while (used.has(candidate) && root.querySelector(`#${CSS.escape(candidate)}`)) candidate = `${base}-${suffix++}`
+  while (used.has(candidate)) candidate = `${base}-${suffix++}`
   used.add(candidate)
   return candidate
 }
