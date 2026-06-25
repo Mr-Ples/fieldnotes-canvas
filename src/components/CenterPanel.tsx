@@ -74,6 +74,20 @@ export default function CenterPanel() {
     pendingScrollRestore.current = restore ? scrollByTab.current[next] : null
     setTab(next)
   }
+  useEffect(() => {
+    const openNotes = () => openTab('notes', false)
+    const backToNotes = (event: Event) => {
+      if (tabRef.current !== 'resources') return
+      event.preventDefault()
+      openTab('notes', false)
+    }
+    window.addEventListener('fieldnotes:open-notes-tab', openNotes)
+    window.addEventListener('fieldnotes:center-back', backToNotes)
+    return () => {
+      window.removeEventListener('fieldnotes:open-notes-tab', openNotes)
+      window.removeEventListener('fieldnotes:center-back', backToNotes)
+    }
+  }, [])
   useLayoutEffect(() => {
     tabRef.current = tab
     const top = pendingScrollRestore.current
@@ -274,7 +288,6 @@ export default function CenterPanel() {
     </section></div>}
 
     <div className="document-head">
-      <span className="doc-kicker">RESEARCH CANVAS · UPDATED JUST NOW</span>
       <input className="canvas-title-input" aria-label="Canvas title" value={activeCanvas.title} onChange={(event) => updateCanvasMeta({ title: event.target.value })} />
       <textarea className="canvas-subtitle-input" aria-label="Canvas subtitle" value={canvasSubtitle.slice(0, CANVAS_SUBTITLE_MAX_LENGTH)} onChange={(event) => updateCanvasMeta({ subtitle: event.target.value.slice(0, CANVAS_SUBTITLE_MAX_LENGTH) })} maxLength={CANVAS_SUBTITLE_MAX_LENGTH} rows={2} />
       <div className="tag-row">
@@ -298,7 +311,10 @@ export default function CenterPanel() {
         <span className="annotation-toggle-tooltip" aria-hidden="true">{annotationToggleTooltip}</span>
       </button>
     </div>
-    {tab === 'notes' ? <Notes key={activeCanvas.id} canvasId={activeCanvas.id} setSaved={setSaved} containerRef={centerRef} canInteract={canUseCanvas} canSaveResource={memberAccess.resources} annotationMode={annotationMode} onPendingHeadingScroll={(target) => { pendingHeadingScroll.current = target }} /> : <Resources canInteract={memberAccess.resources} />}
+    <div hidden={tab !== 'notes'}>
+      <Notes key={activeCanvas.id} canvasId={activeCanvas.id} setSaved={setSaved} containerRef={centerRef} canInteract={canUseCanvas} canSaveResource={memberAccess.resources} annotationMode={annotationMode} onPendingHeadingScroll={(target) => { pendingHeadingScroll.current = target }} />
+    </div>
+    {tab === 'resources' && <Resources canInteract={memberAccess.resources} />}
     <div className="discussion-view"><Comments canInteract={memberAccess.discussion} canSaveResource={memberAccess.resources} /></div>
     <LinkPreviewLayer rootRef={centerRef} />
   </main>

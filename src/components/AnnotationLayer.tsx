@@ -388,7 +388,13 @@ export default function AnnotationLayer({ editorRef, containerRef, canvasId, can
   const root = containerRef.current
   if (!root) return null
   const rootRect = root.getBoundingClientRect()
-  const trackLeft = Math.max(16, Math.min(root.clientWidth - 308, editorRef.current ? editorRef.current.getBoundingClientRect().right - rootRect.left + 18 : root.clientWidth - 308))
+  const mobile = window.matchMedia('(max-width: 820px)').matches
+  const mobileButtonWidth = 136
+  const selectionLeft = selection ? selection.bounds.left - rootRect.left : 16
+  const trackLeft = mobile
+    ? Math.max(12, Math.min(root.clientWidth - mobileButtonWidth - 12, selectionLeft))
+    : Math.max(16, Math.min(root.clientWidth - 308, editorRef.current ? editorRef.current.getBoundingClientRect().right - rootRect.left + 18 : root.clientWidth - 308))
+  const composerLeft = mobile ? Math.max(12, Math.min(root.clientWidth - 304, selection ? selection.bounds.left - rootRect.left : 16)) : trackLeft
   const renderCard = (item: AnnotationThread, foreground: boolean) => <article className="annotation-card" id={item.id}>
     <div className="annotation-meta"><Avatar initials={item.initials} src={item.avatar} name={item.author} color={item.author === 'You' ? 'ink' : 'sage'} /><div><strong>{item.author}</strong><time>{item.time}</time></div><div className="annotation-menu"><button aria-label="Annotation options" aria-expanded={menu === item.id} onClick={() => setMenu(menu === item.id ? null : item.id)}><MoreVertical size={16} /></button>{menu === item.id && <div role="menu"><button role="menuitem" onClick={() => void copyLink(item.id)}><Link2 size={13} /> Copy link</button>{canSaveResource && <button role="menuitem" onClick={() => saveAsResource(item)}><BookmarkPlus size={13} /> Save as resource</button>}{canInteract && <button role="menuitem" onClick={() => remove(item.id)}><Trash2 size={13} /> Delete thread</button>}</div>}</div></div>
     <blockquote className="annotation-quote">“{item.quote}”</blockquote>
@@ -399,8 +405,15 @@ export default function AnnotationLayer({ editorRef, containerRef, canvasId, can
   const dockTarget = document.getElementById('right-panel-annotations')
   const compactRoot = root.closest<HTMLElement>('.app-shell') ?? document.body
   const compactRootRect = compactRoot.getBoundingClientRect()
-  const documentOrder = new Map(positions.map((position, index) => [position.id, index]))
-  const visiblePositions = mode === 'hidden' || annotationTabOpen ? [] : positions
+  const documentOrder = new Map<string, number>()
+  editorRef.current?.querySelectorAll<HTMLElement>('[data-annotation-id]').forEach((anchor) => {
+    const id = anchor.dataset.annotationId
+    if (id && !documentOrder.has(id)) documentOrder.set(id, documentOrder.size)
+  })
+  positions.forEach((position) => {
+    if (!documentOrder.has(position.id)) documentOrder.set(position.id, documentOrder.size)
+  })
+  const visiblePositions = mobile || mode === 'hidden' || annotationTabOpen ? [] : positions
   const regularPositions = visiblePositions.filter((position) => !position.compact)
   const compactPositions = visiblePositions.filter((position) => position.compact)
   const renderThread = (position: Position) => {
@@ -421,17 +434,34 @@ export default function AnnotationLayer({ editorRef, containerRef, canvasId, can
     return aOrder - bOrder
   }).map(({ item }) => item)
   const composerTop = selection ? Math.max(12, selection.bounds.top - rootRect.top - 18) : 0
+  const addButtonTop = selection
+    ? mobile
+      ? Math.max(112, selection.bounds.bottom - rootRect.top + 8)
+      : selection.bounds.top - rootRect.top + selection.bounds.height / 2
+    : 0
+  const showDockedAnnotationInNotes = (item: AnnotationThread) => {
+    setActiveOrigin('card')
+    setActive(item.id)
+    window.dispatchEvent(new CustomEvent('fieldnotes:open-notes-tab', { detail: { id: item.id } }))
+    window.dispatchEvent(new CustomEvent('fieldnotes:show-annotation-in-notes', { detail: { id: item.id } }))
+    requestAnimationFrame(() => {
+      const anchorId = item.anchorId ?? legacyAnchorId(item.id)
+      const anchor = editorRef.current?.querySelector<HTMLElement>(`[data-annotation-id="${CSS.escape(item.id)}"]`) ?? (anchorId ? document.getElementById(anchorId) : null)
+      anchor?.scrollIntoView({ behavior: 'smooth', block: 'center' })
+      requestAnimationFrame(() => locateRef.current())
+    })
+  }
   return <>{mode !== 'hidden' && createPortal(<div className="annotation-ui" aria-live="polite">
     {selection && composing && <div className="annotation-selection-layer" aria-hidden="true">{selection.rects.map((rect, index) => <div key={index} className="annotation-selection-highlight" style={{ top: rect.top - rootRect.top, left: rect.left - rootRect.left, width: rect.width, height: rect.height }} />)}</div>}
-    {canInteract && selection && !composing && <button className="annotation-add" style={{ top: selection.bounds.top - rootRect.top + selection.bounds.height / 2, left: trackLeft }} onMouseDown={(event) => event.preventDefault()} onClick={openComposer} aria-label="Add annotation to selection"><Plus size={14} /> Add annotation</button>}
-    {selection && composing && <div className="annotation-composer" style={{ top: composerTop, left: trackLeft }}>
+    {canInteract && selection && !composing && <button className="annotation-add" style={{ top: addButtonTop, left: trackLeft }} onPointerDown={(event) => event.preventDefault()} onMouseDown={(event) => event.preventDefault()} onClick={openComposer} aria-label="Add annotation to selection"><Plus size={14} /> Add annotation</button>}
+    {selection && composing && <div className="annotation-composer" style={{ top: composerTop, left: composerLeft }}>
       <div className="annotation-composer-head"><span><MessageSquareText size={14} /> New annotation</span><button onClick={closeComposer} aria-label="Cancel annotation"><X size={15} /></button></div>
       <blockquote>“{selection.quote}”</blockquote>
       <textarea ref={composerRef} value={body} onChange={(event) => setBody(event.target.value)} onKeyDown={(event) => { if ((event.metaKey || event.ctrlKey) && event.key === 'Enter') create() }} placeholder="Add a comment…" aria-label="Annotation comment" />
       <div><span>⌘ Enter to send</span><button disabled={!body.trim()} onClick={create}><Check size={13} /> Comment</button></div>
     </div>}
     <div className="annotation-thread-layer">{regularPositions.map(renderThread)}</div>
-  </div>, root)}{compactPositions.length > 0 && createPortal(<div className="annotation-compact-layer">{compactPositions.map(renderThread)}</div>, compactRoot)}{dockTarget && createPortal(<div className="docked-annotations">{dockedItems.map((item) => <div data-annotation-thread-id={item.id} className={`annotation-thread-docked ${active === item.id || menu === item.id ? 'is-active' : ''}`} key={item.id} onMouseEnter={() => { setActiveOrigin('card'); setActive(item.id); setHoveredCard(item.id) }} onMouseLeave={() => setHoveredCard(null)}>{renderCard(item, true)}</div>)}</div>, dockTarget)}</>
+  </div>, root)}{compactPositions.length > 0 && createPortal(<div className="annotation-compact-layer">{compactPositions.map(renderThread)}</div>, compactRoot)}{dockTarget && createPortal(<div className="docked-annotations">{dockedItems.map((item) => <div data-annotation-thread-id={item.id} className={`annotation-thread-docked ${active === item.id || menu === item.id ? 'is-active' : ''}`} key={item.id} onClick={(event) => { if ((event.target as Element).closest('button, input, textarea, a, .annotation-menu')) return; if (window.matchMedia('(max-width: 820px)').matches) showDockedAnnotationInNotes(item) }} onMouseEnter={() => { setActiveOrigin('card'); setActive(item.id); setHoveredCard(item.id) }} onMouseLeave={() => setHoveredCard(null)}>{renderCard(item, true)}</div>)}</div>, dockTarget)}</>
 }
 
 function highlightRange(range: Range, id: string) {

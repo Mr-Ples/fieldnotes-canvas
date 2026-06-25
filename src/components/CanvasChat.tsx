@@ -491,7 +491,7 @@ export default function CanvasChat() {
     setPopover((current) => current?.type === type && current.message?.id === message.id ? undefined : { type, message, top, left })
   }
 
-  return <div className="flex min-h-0 flex-1 flex-col">
+  return <div className="canvas-chat flex min-h-0 flex-1 flex-col">
     <div className="border-b border-rule px-3 py-2.5">
       <div className="flex items-start justify-between gap-2">
         <div className="min-w-0">

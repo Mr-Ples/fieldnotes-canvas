@@ -1,5 +1,5 @@
-import { useEffect, useState, type CSSProperties, type PointerEvent as ReactPointerEvent } from 'react'
-import { Files, MessageSquare, NotebookPen, PanelLeftClose, PanelRightClose } from 'lucide-react'
+import { useEffect, useRef, useState, type CSSProperties, type PointerEvent as ReactPointerEvent } from 'react'
+import { Files, MessageSquare, MessageSquareText, MessagesSquare, NotebookPen, PanelLeftClose, PanelRightClose } from 'lucide-react'
 import CenterPanel from './components/CenterPanel'
 import { CanvasPanel, ChatPanel } from './components/LeftPanel'
 import { AnnotationsPanel, DiscordPanel } from './components/RightPanel'
@@ -7,14 +7,14 @@ import { DockDropEdge, DockTabs, DockView, type DockLocation, type DockTabId } f
 import { PopupHost } from './components/Popups'
 import { deepLinkKind, deepLinkTarget } from './services/deepLinks'
 
-type MobilePanel = 'left' | 'center' | 'right'
+type MobileView = 'notes' | DockTabId
 type DockLayout = Record<DockLocation, DockTabId[]>
 const defaultLayout: DockLayout = { left: ['canvases', 'chat'], right: ['discord', 'annotations'], margin: [] }
 const MAX_PANEL_WIDTH = 520
 const MAX_RIGHT_PANEL_WIDTH = 512
 
 export default function App() {
-  const [mobilePanel, setMobilePanel] = useState<MobilePanel>(() => new URL(window.location.href).searchParams.has('discordConnect') || ['discord-message', 'annotation'].includes(deepLinkKind()) ? 'right' : 'center')
+  const [mobileView, setMobileView] = useState<MobileView>(() => new URL(window.location.href).searchParams.has('discordConnect') ? 'discord' : deepLinkKind() === 'discord-message' ? 'discord' : deepLinkKind() === 'annotation' ? 'annotations' : 'notes')
   const [layout, setLayout] = useState<DockLayout>(() => storedLayout())
   const [active, setActive] = useState<Record<DockLocation, DockTabId | null>>(() => ({ left: storedLayout().left[0] ?? null, right: storedLayout().right[0] ?? null, margin: storedLayout().margin[0] ?? null }))
   const [leftWidth, setLeftWidth] = useState(() => storedPanelWidth('fieldnotes:left-panel-width', 340))
@@ -23,9 +23,31 @@ export default function App() {
   const [rightExpanded, setRightExpanded] = useState(() => storedPanelState('fieldnotes:right-panel-open', true))
   const [annotationCount, setAnnotationCount] = useState(0)
   const [draggingTab, setDraggingTab] = useState<DockTabId | null>(null)
+  const mobileViewRef = useRef(mobileView)
+  const lastBackExitPrompt = useRef(0)
   const leftOpen = layout.left.length > 0 && leftExpanded
   const rightOpen = layout.right.length > 0 && rightExpanded
   const marginOpen = !leftOpen && layout.margin.includes('canvases')
+  const isMobile = () => window.matchMedia('(max-width: 820px)').matches
+
+  const locationOfTab = (tab: DockTabId) => (Object.keys(layout) as DockLocation[]).find((location) => layout[location].includes(tab)) ?? 'left'
+  const mobilePanelForView = (view: MobileView) => view === 'notes' ? 'center' : locationOfTab(view)
+
+  const selectMobileView = (view: MobileView, historyMode: 'push' | 'replace' | 'none' = 'push') => {
+    setMobileView(view)
+    if (!isMobile() || historyMode === 'none') return
+    const state = { ...(window.history.state ?? {}), fieldnotesMobileView: view }
+    if (historyMode === 'replace') window.history.replaceState(state, '', window.location.href)
+    else if (window.history.state?.fieldnotesMobileView !== view) window.history.pushState(state, '', window.location.href)
+  }
+
+  const selectMobileDockTab = (tab: DockTabId, historyMode: 'push' | 'replace' | 'none' = 'push') => {
+    const location = locationOfTab(tab)
+    setActiveTab(location, tab)
+    if (location === 'left') setLeftExpanded(true)
+    if (location === 'right') setRightExpanded(true)
+    selectMobileView(tab, historyMode)
+  }
 
   const moveTab = (tab: DockTabId, location: DockLocation, index: number) => {
     if (location === 'margin' && tab !== 'canvases') return
@@ -72,30 +94,59 @@ export default function App() {
     if (!window.opener || (!authSession && (!session || !canvasId))) return
     window.opener.postMessage(authSession ? { type: 'fieldnotes:discord-auth-complete' } : { type: 'fieldnotes:discord-oauth-complete', session, canvasId }, window.location.origin); window.close()
   }, [])
+  useEffect(() => { mobileViewRef.current = mobileView }, [mobileView])
+  useEffect(() => {
+    if (!isMobile()) return
+    if (!window.history.state?.fieldnotesMobileView) {
+      const boundaryState = { ...(window.history.state ?? {}) }
+      delete boundaryState.fieldnotesMobileView
+      window.history.replaceState({ ...boundaryState, fieldnotesMobileBoundary: true }, '', window.location.href)
+      window.history.pushState({ ...boundaryState, fieldnotesMobileView: mobileViewRef.current }, '', window.location.href)
+    }
+    const onPopState = () => {
+      if (mobileViewRef.current !== 'notes') {
+        lastBackExitPrompt.current = 0
+        window.dispatchEvent(new Event('fieldnotes:open-notes-tab'))
+        selectMobileView('notes', 'push')
+        return
+      }
+      const centerBack = new Event('fieldnotes:center-back', { cancelable: true })
+      if (!window.dispatchEvent(centerBack)) {
+        lastBackExitPrompt.current = 0
+        selectMobileView('notes', 'push')
+        return
+      }
+      const now = Date.now()
+      if (now - lastBackExitPrompt.current < 1800) {
+        window.history.back()
+        return
+      }
+      lastBackExitPrompt.current = now
+      selectMobileView('notes', 'push')
+      window.dispatchEvent(new CustomEvent('fieldnotes:popup-toast', { detail: { id: crypto.randomUUID(), title: 'Press back again to exit' } }))
+    }
+    window.addEventListener('popstate', onPopState)
+    return () => window.removeEventListener('popstate', onPopState)
+  }, [])
   useEffect(() => {
     const onHash = () => {
       const kind = deepLinkKind(deepLinkTarget())
       if (kind === 'annotation') {
-        const location = layout.left.includes('annotations') ? 'left' : 'right'
-        setMobilePanel(location); setActiveTab(location, 'annotations')
-        if (location === 'left') setLeftExpanded(true); else setRightExpanded(true)
+        selectMobileDockTab('annotations', 'push')
       } else if (kind === 'llm-chat') {
-        const location = layout.left.includes('chat') ? 'left' : 'right'
-        setMobilePanel(location); setActiveTab(location, 'chat')
-        if (location === 'left') setLeftExpanded(true); else setRightExpanded(true)
+        selectMobileDockTab('chat', 'push')
       } else if (kind === 'discord-message') {
-        const location = layout.left.includes('discord') ? 'left' : 'right'
-        setMobilePanel(location); setActiveTab(location, 'discord')
-        if (location === 'left') setLeftExpanded(true); else setRightExpanded(true)
-      } else if (kind === 'resource' || kind === 'comment' || kind === 'canvas') setMobilePanel('center')
+        selectMobileDockTab('discord', 'push')
+      } else if (kind === 'resource' || kind === 'comment' || kind === 'canvas') selectMobileView('notes', 'push')
     }
     onHash(); window.addEventListener('hashchange', onHash); return () => window.removeEventListener('hashchange', onHash)
   }, [layout])
   useEffect(() => {
     const availability = (event: Event) => setAnnotationCount((event as CustomEvent<{ count: number }>).detail.count)
-    const openAnnotations = () => { const location = layout.left.includes('annotations') ? 'left' : 'right'; setActiveTab(location, 'annotations'); setMobilePanel(location); if (location === 'left') setLeftExpanded(true); else setRightExpanded(true) }
-    window.addEventListener('fieldnotes:annotations-docked', availability); window.addEventListener('fieldnotes:open-annotations', openAnnotations)
-    return () => { window.removeEventListener('fieldnotes:annotations-docked', availability); window.removeEventListener('fieldnotes:open-annotations', openAnnotations) }
+    const openAnnotations = () => selectMobileDockTab('annotations', 'push')
+    const showAnnotationInNotes = () => selectMobileView('notes', 'push')
+    window.addEventListener('fieldnotes:annotations-docked', availability); window.addEventListener('fieldnotes:open-annotations', openAnnotations); window.addEventListener('fieldnotes:show-annotation-in-notes', showAnnotationInNotes)
+    return () => { window.removeEventListener('fieldnotes:annotations-docked', availability); window.removeEventListener('fieldnotes:open-annotations', openAnnotations); window.removeEventListener('fieldnotes:show-annotation-in-notes', showAnnotationInNotes) }
   }, [layout])
   useEffect(() => { const token = new URL(window.location.href).searchParams.get('share'); if (!token || sessionStorage.getItem(`fieldnotes:loaded-share:${token}`)) return; void fetch(`/api/shares/${encodeURIComponent(token)}`).then(async (response) => { const result = await response.json() as { snapshot?: Record<string, string> }; if (!response.ok || !result.snapshot) return; Object.entries(result.snapshot).forEach(([key, value]) => localStorage.setItem(key, value)); sessionStorage.setItem(`fieldnotes:loaded-share:${token}`, 'true'); window.location.reload() }) }, [])
   useEffect(() => { localStorage.setItem('fieldnotes:dock-layout', JSON.stringify(layout)); setActive((current) => ({ left: layout.left.includes(current.left as DockTabId) ? current.left : layout.left[0] ?? null, right: layout.right.includes(current.right as DockTabId) ? current.right : layout.right[0] ?? null, margin: layout.margin.includes(current.margin as DockTabId) ? current.margin : layout.margin[0] ?? null })) }, [layout])
@@ -104,23 +155,26 @@ export default function App() {
   useEffect(() => { window.dispatchEvent(new CustomEvent('fieldnotes:panels-changed', { detail: { leftOpen, rightOpen } })) }, [leftOpen, rightOpen])
   useEffect(() => {
     const location = layout.left.includes('annotations') ? 'left' : 'right'
-    const panelVisible = window.matchMedia('(max-width: 820px)').matches ? mobilePanel === location : location === 'left' ? leftOpen : rightOpen
+    const panelVisible = window.matchMedia('(max-width: 820px)').matches ? mobileView === 'annotations' : location === 'left' ? leftOpen : rightOpen
     window.dispatchEvent(new CustomEvent('fieldnotes:annotations-tab-changed', { detail: { open: active[location] === 'annotations' && panelVisible } }))
-  }, [active, layout, leftOpen, mobilePanel, rightOpen])
+  }, [active, layout, leftOpen, mobileView, rightOpen])
 
   const panelStyle = { '--left-panel-width': `${leftWidth}px`, '--right-panel-width': `${rightWidth}px`, '--effective-left-panel-width': leftOpen ? `${leftWidth}px` : '0px', '--effective-right-panel-width': rightOpen ? `${rightWidth}px` : '0px' } as CSSProperties
   const renderView = (tab: DockTabId, location: DockLocation) => tab === 'canvases' ? <CanvasPanel margin={location === 'margin'} onDock={location === 'margin' ? () => moveTab('canvases', 'left', layout.left.length) : undefined}/> : tab === 'chat' ? <ChatPanel/> : tab === 'discord' ? <DiscordPanel/> : <AnnotationsPanel/>
   const panel = (location: 'left' | 'right') => {
     const open = location === 'left' ? leftOpen : rightOpen
     const close = () => {
-      if (window.matchMedia('(max-width: 820px)').matches) setMobilePanel('center')
+      if (isMobile()) {
+        window.dispatchEvent(new Event('fieldnotes:open-notes-tab'))
+        selectMobileView('notes', 'push')
+      }
       else if (location === 'left') setLeftExpanded(false)
       else setRightExpanded(false)
     }
-    return <aside className={`side-panel ${location}-panel`}><div className="side-panel-inner"><div className="panel-tab-row"><DockTabs tabs={layout[location]} active={active[location]} location={location} annotationCount={annotationCount} draggingTab={draggingTab} onDragChange={setDraggingTab} onActivate={(tab) => setActiveTab(location, tab)} onDropTab={moveTab}/><button className="panel-close-button" onClick={close} aria-label={`Close ${location} panel`} title={`Close ${location} panel`}>{location === 'left' ? <PanelLeftClose size={16}/> : <PanelRightClose size={16}/>}</button></div>{layout[location].map((tab) => <DockView key={tab} show={active[location] === tab}>{renderView(tab, location)}</DockView>)}</div>{open && <div className={`panel-resizer ${location}-resizer`} role="separator" aria-label={`Resize or close ${location} sidebar`} aria-orientation="vertical" title={`Drag to resize or click to close ${location} sidebar`} onPointerDown={(event) => startResize(location, event)}/>}</aside>
+    return <aside className={`side-panel ${location}-panel`}><div className="side-panel-inner"><div className="panel-tab-row"><DockTabs tabs={layout[location]} active={active[location]} location={location} annotationCount={annotationCount} draggingTab={draggingTab} onDragChange={setDraggingTab} onActivate={(tab) => isMobile() ? selectMobileDockTab(tab, 'push') : setActiveTab(location, tab)} onDropTab={moveTab}/><button className="panel-close-button" onClick={close} aria-label={`Close ${location} panel`} title={`Close ${location} panel`}>{location === 'left' ? <PanelLeftClose size={16}/> : <PanelRightClose size={16}/>}</button></div>{layout[location].map((tab) => <DockView key={tab} show={active[location] === tab}>{renderView(tab, location)}</DockView>)}</div>{open && <div className={`panel-resizer ${location}-resizer`} role="separator" aria-label={`Resize or close ${location} sidebar`} aria-orientation="vertical" title={`Drag to resize or click to close ${location} sidebar`} onPointerDown={(event) => startResize(location, event)}/>}</aside>
   }
 
-  return <div className={`app-shell ${leftOpen ? '' : 'left-collapsed'} ${rightOpen ? '' : 'right-collapsed'} ${marginOpen ? 'margin-open' : ''} ${draggingTab ? 'tab-dragging' : ''} ${draggingTab === 'canvases' ? 'tab-dragging-canvases' : ''}`} data-mobile-panel={mobilePanel} style={panelStyle}>
+  return <div className={`app-shell ${leftOpen ? '' : 'left-collapsed'} ${rightOpen ? '' : 'right-collapsed'} ${marginOpen ? 'margin-open' : ''} ${draggingTab ? 'tab-dragging' : ''} ${draggingTab === 'canvases' ? 'tab-dragging-canvases' : ''}`} data-mobile-panel={mobilePanelForView(mobileView)} data-mobile-view={mobileView} style={panelStyle}>
     {panel('left')}
     {layout.left.length > 0 && !leftOpen && <button className="panel-edge-opener left-edge-opener" onClick={() => setLeftExpanded(true)} aria-label="Open left panel" title="Open left panel"/>}
     {!leftOpen && <DockDropEdge location="left" draggingTab={draggingTab} onDragChange={setDraggingTab} onDropTab={moveTab}/>} 
@@ -129,7 +183,7 @@ export default function App() {
     <CenterPanel/>
     {layout.right.length > 0 && !rightOpen && <button className="panel-edge-opener right-edge-opener" onClick={() => setRightExpanded(true)} aria-label="Open right panel" title="Open right panel"/>}
     {!rightOpen && <DockDropEdge location="right" draggingTab={draggingTab} onDragChange={setDraggingTab} onDropTab={moveTab}/>} {panel('right')}
-    <nav className="mobile-nav" aria-label="Canvas areas"><button className={mobilePanel === 'left' ? 'active' : ''} onClick={() => setMobilePanel('left')}><Files size={19}/><span>Canvases</span></button><button className={mobilePanel === 'center' ? 'active' : ''} onClick={() => setMobilePanel('center')}><NotebookPen size={19}/><span>Notes</span></button><button className={mobilePanel === 'right' ? 'active' : ''} onClick={() => setMobilePanel('right')}><MessageSquare size={19}/><span>Activity</span></button></nav>
+    <nav className="mobile-nav" aria-label="Canvas areas"><button className={mobileView === 'canvases' ? 'active' : ''} onClick={() => selectMobileDockTab('canvases', 'push')}><Files size={19}/><span>Canvases</span></button><button className={mobileView === 'chat' ? 'active' : ''} onClick={() => selectMobileDockTab('chat', 'push')}><MessageSquare size={19}/><span>LLM chat</span></button><button className={mobileView === 'notes' ? 'active' : ''} onClick={() => { window.dispatchEvent(new Event('fieldnotes:open-notes-tab')); selectMobileView('notes', 'push') }}><NotebookPen size={19}/><span>Notes</span></button><button className={mobileView === 'annotations' ? 'active' : ''} onClick={() => selectMobileDockTab('annotations', 'push')}><MessageSquareText size={19}/><span>Annotations</span>{annotationCount > 0 && <i>{annotationCount}</i>}</button><button className={mobileView === 'discord' ? 'active' : ''} onClick={() => selectMobileDockTab('discord', 'push')}><MessagesSquare size={19}/><span>Discord</span></button></nav>
     <PopupHost/>
   </div>
 }

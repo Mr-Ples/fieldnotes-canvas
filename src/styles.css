@@ -389,22 +389,58 @@
 .canvas-row.deep-link-selected .canvas-item { @apply bg-amber-50; }
 
 @media (max-width: 820px) {
-  .app-shell, .app-shell.left-collapsed, .app-shell.right-collapsed { @apply block h-dvh pb-[calc(60px+env(safe-area-inset-bottom))]; }
-  .left-panel, .right-panel, .center-panel, .canvas-margin-dock { @apply invisible hidden h-full w-full border-0; }
-  .app-shell[data-mobile-panel="left"] .left-panel { @apply visible flex; } .app-shell[data-mobile-panel="center"] .center-panel { @apply visible block; } .app-shell[data-mobile-panel="right"] .right-panel { @apply visible flex; }
-  .margin-dock-drop, .dock-drop-edge, .panel-resizer, .panel-edge-opener { @apply hidden!; }
-  .mobile-nav { @apply fixed inset-x-0 bottom-0 z-50 grid min-h-[60px] grid-cols-3 border-t border-rule bg-paper/95 pb-[env(safe-area-inset-bottom)] backdrop-blur-xl; }
+  .app-shell, .app-shell.left-collapsed, .app-shell.right-collapsed { @apply block h-dvh max-w-none overflow-y-auto overflow-x-hidden pb-[calc(60px+env(safe-area-inset-bottom))]; width: 100dvw; }
+  .left-panel, .right-panel, .center-panel, .canvas-margin-dock { @apply invisible hidden max-w-none border-0; width: 100dvw; }
+  .app-shell[data-mobile-panel="left"] .left-panel, .app-shell[data-mobile-panel="right"] .right-panel, .app-shell[data-mobile-panel="margin"] .canvas-margin-dock {
+    @apply visible flex;
+    position: fixed;
+    inset: 0 0 calc(60px + env(safe-area-inset-bottom)) 0;
+    z-index: 40;
+    width: 100dvw;
+    max-width: 100dvw;
+    height: auto;
+    min-height: 0;
+    overflow: hidden;
+  }
+  .app-shell[data-mobile-panel="center"] .center-panel { @apply visible block; min-height: calc(100dvh - 60px - env(safe-area-inset-bottom)); }
+  .app-shell[data-mobile-panel="left"] .side-panel-inner, .app-shell[data-mobile-panel="right"] .side-panel-inner { @apply w-full min-w-0; height: 100%; min-height: 0; }
+  .app-shell[data-mobile-panel="left"] .panel-tab-row, .app-shell[data-mobile-panel="right"] .panel-tab-row { @apply hidden; }
+  .app-shell[data-mobile-panel="left"] .dock-view.is-active, .app-shell[data-mobile-panel="right"] .dock-view.is-active, .app-shell[data-mobile-panel="margin"] .dock-view.is-active { @apply w-full min-w-0 flex-1; height: auto; overflow: hidden; }
+  .app-shell[data-mobile-panel="left"] .dock-view.is-active > *, .app-shell[data-mobile-panel="right"] .dock-view.is-active > *, .app-shell[data-mobile-panel="margin"] .dock-view.is-active > * { @apply w-full min-w-0; }
+  .app-shell[data-mobile-panel="margin"] .canvas-margin-dock > .dock-view { @apply m-0 w-full; }
+  .canvas-directory, .annotation-dock-target, .canvas-chat { @apply w-full min-w-0 flex-1; height: 100%; min-height: 0; }
+  .canvas-list, .docked-annotations { @apply w-full min-w-0 flex-1; min-height: 0; }
+  .margin-dock-drop, .dock-drop-edge, .panel-resizer, .panel-edge-opener, .panel-close-button { @apply hidden!; }
+  .mobile-nav { @apply fixed inset-x-0 bottom-0 z-50 grid min-h-[60px] grid-cols-5 border-t border-rule bg-paper/95 pb-[env(safe-area-inset-bottom)] backdrop-blur-xl; }
   .mobile-nav button { @apply relative flex flex-col items-center justify-center gap-0.5 border-0 bg-transparent text-[9px] text-stone-500; } .mobile-nav button.active { @apply text-forest; }
   .mobile-nav i { @apply absolute top-1.5 ml-6 grid size-[15px] place-items-center rounded-full bg-clay text-[8px] not-italic text-white; }
+  .dock-tab, .canvas-row[draggable="true"], .canvas-item { touch-action: pan-y; -webkit-touch-callout: none; user-select: none; }
+  .annotation-ui { @apply z-20; }
+  .annotation-selection-layer { @apply z-10; }
+  .annotation-add { @apply z-20 max-w-[calc(100vw-32px)] translate-y-0 px-2.5 py-2; }
+  .annotation-composer { @apply w-[calc(100vw-24px)] max-w-[292px]; }
+  .annotation-thread-layer, .annotation-compact-layer { @apply hidden; }
   .annotation-thread .annotation-card { @apply pointer-events-none opacity-0; }
-  .annotation-thread.is-active .annotation-card, .annotation-thread:focus-within .annotation-card, .annotation-thread:hover .annotation-card { @apply pointer-events-auto opacity-100; }
+  .docked-annotations .annotation-card { @apply pointer-events-auto opacity-100; }
+  .annotation-thread-docked { @apply cursor-pointer; }
+  .canvas-account-control {
+    position: fixed;
+    top: calc(env(safe-area-inset-top) + 1px);
+    right: 4px;
+    left: auto;
+    z-index: 80;
+  }
+  .document-head, .content-tabs, .note-wrap, .resources-view, .discussion-view { width: 100%; }
+  .document-head { @apply mt-20 px-0; }
+  .content-tabs, .note-wrap, .resources-view, .discussion-view { @apply px-0; }
+  .note-editor { @apply px-0; }
 }
 
 @media (max-width: 560px) {
   .app-shell { --canvas-scroll-offset: 101px; }
-  .canvas-account-control { @apply right-4; }
-  .document-head, .content-tabs, .note-wrap, .resources-view { @apply w-[calc(100%_-_32px)]; }
-  .document-head { @apply mt-8 mb-6; } .document-head h1 { @apply text-[38px]; } .document-head > p { @apply text-base; }
+  .canvas-account-control { right: 8px; top: calc(env(safe-area-inset-top) + 8px); }
+  .document-head, .content-tabs, .note-wrap, .resources-view { @apply w-[calc(100%_-_18px)]; }
+  .document-head { @apply mt-20 mb-6; } .document-head h1 { @apply text-[38px]; } .document-head > p { @apply text-base; }
   .content-tabs { @apply top-0; }
   .format-bar { @apply top-[47px] overflow-x-auto; } .markdown-label { @apply hidden; } .note-editor { @apply pb-24 text-base; }
   .resource-actions .text-action { @apply hidden; } .drop-zone { @apply justify-start px-4; }

@@ -1,4 +1,4 @@
-import { useEffect, useState, type DragEvent, type KeyboardEvent, type MouseEvent, type ReactNode } from 'react'
+import { useEffect, useRef, useState, type DragEvent, type KeyboardEvent, type MouseEvent, type PointerEvent as ReactPointerEvent, type ReactNode } from 'react'
 import { Bot, ChevronDown, ChevronRight, FileText, FolderPlus, Link2, MoreVertical, PanelLeft, Plus, Search, Send, Settings, Sparkles, Trash2 } from 'lucide-react'
 import { canvases as seedCanvases, projects as seedProjects, resources as seedResources, type Canvas, type Project } from '../data'
 import { CopyLinkButton, IconButton } from './Primitives'
@@ -17,6 +17,8 @@ export function CanvasPanel({ margin = false, onDock }: { margin?: boolean; onDo
   const [activeHeading, setActiveHeading] = useState('')
   const [menu, setMenu] = useState<string | null>(null)
   const [dragTarget, setDragTarget] = useState('')
+  const touchCanvasDrag = useRef<{ canvasId: string; pointerId: number; started: boolean; timer: number; x: number; y: number } | null>(null)
+  const suppressCanvasClick = useRef(false)
   const [activeId, setActiveId] = useState(() => {
     const stored = localStorage.getItem('fieldnotes:active-canvas')
     return stored ? (JSON.parse(stored) as { id: string }).id : 'attention'
@@ -191,8 +193,53 @@ export function CanvasPanel({ margin = false, onDock }: { margin?: boolean; onDo
     event.preventDefault()
     moveCanvas(canvasId, projectId)
   }
+  const startTouchCanvasDrag = (event: ReactPointerEvent<HTMLDivElement>, canvas: Canvas) => {
+    if (event.pointerType === 'mouse' || (event.target as Element).closest('.directory-actions, .directory-menu')) return
+    const target = event.currentTarget
+    touchCanvasDrag.current = {
+      canvasId: canvas.id,
+      pointerId: event.pointerId,
+      started: false,
+      x: event.clientX,
+      y: event.clientY,
+      timer: window.setTimeout(() => {
+        const drag = touchCanvasDrag.current
+        if (!drag || drag.pointerId !== event.pointerId) return
+        drag.started = true
+        target.setPointerCapture(event.pointerId)
+        setDragTarget('')
+      }, 320),
+    }
+  }
+  const moveTouchCanvasDrag = (event: ReactPointerEvent<HTMLDivElement>) => {
+    const drag = touchCanvasDrag.current
+    if (!drag || drag.pointerId !== event.pointerId) return
+    if (!drag.started && Math.hypot(event.clientX - drag.x, event.clientY - drag.y) > 10) {
+      window.clearTimeout(drag.timer)
+      touchCanvasDrag.current = null
+      return
+    }
+    if (!drag.started) return
+    event.preventDefault()
+    const target = document.elementFromPoint(event.clientX, event.clientY)?.closest<HTMLElement>('[data-canvas-drop-target]')
+    setDragTarget(target?.dataset.canvasDropTarget ?? '')
+  }
+  const finishTouchCanvasDrag = (event: ReactPointerEvent<HTMLDivElement>) => {
+    const drag = touchCanvasDrag.current
+    if (!drag || drag.pointerId !== event.pointerId) return
+    window.clearTimeout(drag.timer)
+    if (drag.started) {
+      event.preventDefault()
+      suppressCanvasClick.current = true
+      const target = document.elementFromPoint(event.clientX, event.clientY)?.closest<HTMLElement>('[data-canvas-drop-target]')
+      const dropId = target?.dataset.canvasDropTarget ?? ''
+      if (dropId) moveCanvas(drag.canvasId, dropId.startsWith('project-') ? dropId.replace(/^project-/, '') : undefined)
+    }
+    setDragTarget('')
+    touchCanvasDrag.current = null
+  }
   const ActionMenu = ({ id, label, children }: { id: string; label: string; children: ReactNode }) => <div className="directory-menu"><button className="directory-menu-trigger" aria-label={label} aria-expanded={menu === id} onClick={(event) => { event.stopPropagation(); setMenu(menu === id ? null : id) }}><MoreVertical size={14}/></button>{menu === id && <div className="directory-menu-popover" role="menu" onClick={() => setMenu(null)}>{children}</div>}</div>
-  const canvasRow = (canvas: Canvas) => <div className="canvas-row deep-link-target" id={`canvas-${canvas.id}`} key={canvas.id} draggable onDragStart={(event) => dragCanvas(event, canvas)} onDragEnd={() => setDragTarget('')}><a href={`#canvas-${canvas.id}`} onClick={(event) => { event.preventDefault(); selectCanvas(canvas); navigateToDeepLink(`canvas-${canvas.id}`) }} className={`canvas-item ${canvas.id === activeId ? 'is-current' : ''}`}><span className="canvas-symbol">{canvas.emoji}</span><span className="canvas-name">{canvas.title}</span><time>{canvas.updated}</time></a><div className="directory-actions"><ActionMenu id={`canvas-${canvas.id}`} label={`${canvas.title} options`}><CopyLinkButton target={`canvas-${canvas.id}`}/><button role="menuitem" onClick={() => canvasAction(canvas, 'invite')}><Link2 size={13}/> Create invite link</button><button role="menuitem" onClick={() => canvasAction(canvas, 'settings')}><Settings size={13}/> Permissions</button><button role="menuitem" className="danger" onClick={() => deleteCanvas(canvas)}><Trash2 size={13}/> Delete canvas</button></ActionMenu></div></div>
+  const canvasRow = (canvas: Canvas) => <div className="canvas-row deep-link-target" id={`canvas-${canvas.id}`} key={canvas.id} draggable onContextMenu={(event) => { if (window.matchMedia('(max-width: 820px)').matches) event.preventDefault() }} onPointerDown={(event) => startTouchCanvasDrag(event, canvas)} onPointerMove={moveTouchCanvasDrag} onPointerUp={finishTouchCanvasDrag} onPointerCancel={finishTouchCanvasDrag} onDragStart={(event) => dragCanvas(event, canvas)} onDragEnd={() => setDragTarget('')}><a href={`#canvas-${canvas.id}`} onClick={(event) => { event.preventDefault(); if (suppressCanvasClick.current) { suppressCanvasClick.current = false; return } selectCanvas(canvas); navigateToDeepLink(`canvas-${canvas.id}`) }} className={`canvas-item ${canvas.id === activeId ? 'is-current' : ''}`}><span className="canvas-symbol">{canvas.emoji}</span><span className="canvas-name">{canvas.title}</span><time>{canvas.updated}</time></a><div className="directory-actions"><ActionMenu id={`canvas-${canvas.id}`} label={`${canvas.title} options`}><CopyLinkButton target={`canvas-${canvas.id}`}/><button role="menuitem" onClick={() => canvasAction(canvas, 'invite')}><Link2 size={13}/> Create invite link</button><button role="menuitem" onClick={() => canvasAction(canvas, 'settings')}><Settings size={13}/> Permissions</button><button role="menuitem" className="danger" onClick={() => deleteCanvas(canvas)}><Trash2 size={13}/> Delete canvas</button></ActionMenu></div></div>
   const standaloneCanvases = filtered.filter((canvas) => !canvas.projectId)
 
   return <div className={`canvas-directory ${margin ? 'is-margin' : ''}`}>
@@ -202,8 +249,8 @@ export function CanvasPanel({ margin = false, onDock }: { margin?: boolean; onDo
       <button className="new-project" onClick={createProject} aria-label="New project" title="New project"><FolderPlus size={16}/></button>
     </div>}
     <div className="canvas-list" aria-label="Canvas directory">
-      {projects.map((project) => { const projectCanvases = filtered.filter((canvas) => canvas.projectId === project.id); if (!projectCanvases.length && query) return null; const closed = collapsed[project.id]; const dropId = `project-${project.id}`; return <section className={`canvas-project ${dragTarget === dropId ? 'is-drop-target' : ''}`} key={project.id} onDragOver={(event) => allowCanvasDrop(event, dropId)} onDragLeave={leaveCanvasDrop} onDrop={(event) => dropCanvas(event, project.id)}><div className="group-label"><button className="project-toggle" onClick={() => setCollapsed({ ...collapsed, [project.id]: !closed })}>{closed ? <ChevronRight size={14}/> : <ChevronDown size={14}/>}<strong>{project.title}</strong></button><span className="directory-actions"><ActionMenu id={`project-${project.id}`} label={`${project.title} options`}><button role="menuitem" onClick={() => createCanvas(project.id)}><Plus size={13}/> New canvas</button><button role="menuitem" onClick={() => renameProject(project.id)}><FileText size={13}/> Rename project</button><button role="menuitem" onClick={() => projectAction(project.id, 'invite')}><Link2 size={13}/> Create invite link</button><button role="menuitem" onClick={() => projectAction(project.id, 'settings')}><Settings size={13}/> Permissions</button><button role="menuitem" className="danger" onClick={() => deleteProject(project.id)}><Trash2 size={13}/> Delete project</button></ActionMenu></span></div>{!closed && projectCanvases.map(canvasRow)}</section> })}
-      <section className={`canvas-standalone ${dragTarget === 'standalone' ? 'is-drop-target' : ''}`} onDragOver={(event) => allowCanvasDrop(event, 'standalone')} onDragLeave={leaveCanvasDrop} onDrop={(event) => dropCanvas(event)}>{standaloneCanvases.map(canvasRow)}</section>
+      {projects.map((project) => { const projectCanvases = filtered.filter((canvas) => canvas.projectId === project.id); if (!projectCanvases.length && query) return null; const closed = collapsed[project.id]; const dropId = `project-${project.id}`; return <section data-canvas-drop-target={dropId} className={`canvas-project ${dragTarget === dropId ? 'is-drop-target' : ''}`} key={project.id} onDragOver={(event) => allowCanvasDrop(event, dropId)} onDragLeave={leaveCanvasDrop} onDrop={(event) => dropCanvas(event, project.id)}><div className="group-label"><button className="project-toggle" onClick={() => setCollapsed({ ...collapsed, [project.id]: !closed })}>{closed ? <ChevronRight size={14}/> : <ChevronDown size={14}/>}<strong>{project.title}</strong></button><span className="directory-actions"><ActionMenu id={`project-${project.id}`} label={`${project.title} options`}><button role="menuitem" onClick={() => createCanvas(project.id)}><Plus size={13}/> New canvas</button><button role="menuitem" onClick={() => renameProject(project.id)}><FileText size={13}/> Rename project</button><button role="menuitem" onClick={() => projectAction(project.id, 'invite')}><Link2 size={13}/> Create invite link</button><button role="menuitem" onClick={() => projectAction(project.id, 'settings')}><Settings size={13}/> Permissions</button><button role="menuitem" className="danger" onClick={() => deleteProject(project.id)}><Trash2 size={13}/> Delete project</button></ActionMenu></span></div>{!closed && projectCanvases.map(canvasRow)}</section> })}
+      <section data-canvas-drop-target="standalone" className={`canvas-standalone ${dragTarget === 'standalone' ? 'is-drop-target' : ''}`} onDragOver={(event) => allowCanvasDrop(event, 'standalone')} onDragLeave={leaveCanvasDrop} onDrop={(event) => dropCanvas(event)}>{standaloneCanvases.map(canvasRow)}</section>
       {margin && headings.length > 0 && <nav className="document-outline" aria-label="Canvas headings"><span>{activeCanvas?.title ?? 'Canvas'}</span>{headings.map((heading) => <a key={heading.id} className={`outline-level-${heading.level} ${activeHeading === heading.id ? 'is-active' : ''}`} href={`#${heading.id}`} onClick={(event) => scrollToHeading(event, heading.id)}>{heading.title}</a>)}</nav>}
     </div>
   </div>
