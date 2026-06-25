@@ -5,6 +5,7 @@ import { CanvasPanel, ChatPanel } from './components/LeftPanel'
 import { AnnotationsPanel, DiscordPanel } from './components/RightPanel'
 import { DockDropEdge, DockTabs, DockView, type DockLocation, type DockTabId } from './components/DockPanel'
 import { PopupHost } from './components/Popups'
+import { deepLinkKind, deepLinkTarget } from './services/deepLinks'
 
 type MobilePanel = 'left' | 'center' | 'right'
 type DockLayout = Record<DockLocation, DockTabId[]>
@@ -13,7 +14,7 @@ const MAX_PANEL_WIDTH = 520
 const MAX_RIGHT_PANEL_WIDTH = 512
 
 export default function App() {
-  const [mobilePanel, setMobilePanel] = useState<MobilePanel>(() => new URL(window.location.href).searchParams.has('discordConnect') || window.location.hash.startsWith('#discord-message-') || window.location.hash.startsWith('#annotation-comment') ? 'right' : 'center')
+  const [mobilePanel, setMobilePanel] = useState<MobilePanel>(() => new URL(window.location.href).searchParams.has('discordConnect') || ['discord-message', 'annotation'].includes(deepLinkKind()) ? 'right' : 'center')
   const [layout, setLayout] = useState<DockLayout>(() => storedLayout())
   const [active, setActive] = useState<Record<DockLocation, DockTabId | null>>(() => ({ left: storedLayout().left[0] ?? null, right: storedLayout().right[0] ?? null, margin: storedLayout().margin[0] ?? null }))
   const [leftWidth, setLeftWidth] = useState(() => storedPanelWidth('fieldnotes:left-panel-width', 340))
@@ -72,7 +73,22 @@ export default function App() {
     window.opener.postMessage(authSession ? { type: 'fieldnotes:discord-auth-complete' } : { type: 'fieldnotes:discord-oauth-complete', session, canvasId }, window.location.origin); window.close()
   }, [])
   useEffect(() => {
-    const onHash = () => { const hash = window.location.hash; if (hash.startsWith('#annotation-comment')) { const location = layout.left.includes('annotations') ? 'left' : 'right'; setMobilePanel(location); setActiveTab(location, 'annotations') } else if (hash.startsWith('#chat-')) { const location = layout.left.includes('chat') ? 'left' : 'right'; setMobilePanel(location); setActiveTab(location, 'chat') } else if (hash.startsWith('#res-') || hash.startsWith('#comment-')) setMobilePanel('center') }
+    const onHash = () => {
+      const kind = deepLinkKind(deepLinkTarget())
+      if (kind === 'annotation') {
+        const location = layout.left.includes('annotations') ? 'left' : 'right'
+        setMobilePanel(location); setActiveTab(location, 'annotations')
+        if (location === 'left') setLeftExpanded(true); else setRightExpanded(true)
+      } else if (kind === 'llm-chat') {
+        const location = layout.left.includes('chat') ? 'left' : 'right'
+        setMobilePanel(location); setActiveTab(location, 'chat')
+        if (location === 'left') setLeftExpanded(true); else setRightExpanded(true)
+      } else if (kind === 'discord-message') {
+        const location = layout.left.includes('discord') ? 'left' : 'right'
+        setMobilePanel(location); setActiveTab(location, 'discord')
+        if (location === 'left') setLeftExpanded(true); else setRightExpanded(true)
+      } else if (kind === 'resource' || kind === 'comment' || kind === 'canvas') setMobilePanel('center')
+    }
     onHash(); window.addEventListener('hashchange', onHash); return () => window.removeEventListener('hashchange', onHash)
   }, [layout])
   useEffect(() => {

@@ -56,6 +56,7 @@ export default function CanvasChat() {
   const [headerMenu, setHeaderMenu] = useState<{ top: number; left: number }>()
   const [reactionHover, setReactionHover] = useState<{ messageId: string; emoji: string; participants: string[]; top: number; left: number }>()
   const [online, setOnline] = useState<Array<{ id: string; name: string; avatar?: string }>>([])
+  const [hashTarget, setHashTarget] = useState(() => window.location.hash)
   
   // Custom chat settings states
   const [settings, setSettings] = useState<{ locked: boolean; loginOnly: boolean }>({ locked: false, loginOnly: false })
@@ -241,13 +242,38 @@ export default function CanvasChat() {
   }, [])
 
   useEffect(() => {
-    const match = window.location.hash.match(/^#discord-message-([0-9a-f-]{36})$/)
+    const hashChanged = () => {
+      linkedMessageHandled.current = false
+      setHashTarget(window.location.hash)
+    }
+    window.addEventListener('hashchange', hashChanged)
+    return () => window.removeEventListener('hashchange', hashChanged)
+  }, [])
+
+  useEffect(() => {
+    const match = hashTarget.match(/^#discord-message-([0-9a-f-]{36})$/)
     const index = match ? messages.findIndex((message) => message.id === match[1]) : -1
     if (match && index >= 0 && !linkedMessageHandled.current) {
       list.current?.scrollToIndex({ index, align: 'center', behavior: 'auto' })
       focusMessageWhenVisible(match[1], 12, () => { linkedMessageHandled.current = true; setLinkReady(true) }, 'auto')
     }
-  }, [messages])
+  }, [hashTarget, messages])
+
+  useEffect(() => {
+    const match = hashTarget.match(/^#discord-message-([0-9a-f-]{36})$/)
+    const id = match?.[1]
+    if (!id || messages.some((message) => message.id === id)) return
+    let disposed = false
+    setLinkReady(false)
+    void fetch('/api/canvases/' + encodeURIComponent(canvas.id) + '/messages/' + id)
+      .then(async (response) => {
+        const result = await response.json() as { message?: Message }
+        if (!disposed && response.ok && result.message) setMessages((current) => current.some((message) => message.id === result.message!.id) ? current : [...current, result.message!].sort((a, b) => a.createdAt - b.createdAt))
+        else if (!disposed) setLinkReady(true)
+      })
+      .catch(() => { if (!disposed) setLinkReady(true) })
+    return () => { disposed = true }
+  }, [canvas.id, hashTarget, messages])
 
   useLayoutEffect(() => {
     if (!messages.length || linkedMessageId || restoredScrollCanvas.current === canvas.id) return
@@ -603,14 +629,14 @@ function typingLabel(names: string[]) {
   return unique[0] + ', ' + unique[1] + ' and ' + (unique.length - 2) + ' others are typing…'
 }
 
-function focusMessageWhenVisible(id: string, attempts = 8, onVisible?: () => void, behavior: ScrollBehavior = 'smooth') {
+function focusMessageWhenVisible(id: string, attempts = 8, onVisible?: () => void, _behavior: ScrollBehavior = 'smooth') {
   const element = document.getElementById('discord-message-' + id)
   if (!element) {
-    if (attempts > 0) setTimeout(() => focusMessageWhenVisible(id, attempts - 1, onVisible, behavior), 60)
+    if (attempts > 0) setTimeout(() => focusMessageWhenVisible(id, attempts - 1, onVisible, _behavior), 60)
     else onVisible?.()
     return
   }
-  element.scrollIntoView({ behavior, block: 'center' })
-  element.animate([{ backgroundColor: '#fef3c7' }, { backgroundColor: 'transparent' }], { duration: 1_800, easing: 'ease-out' })
+  document.querySelectorAll('.deep-link-selected').forEach((current) => current.classList.remove('deep-link-selected'))
+  element.classList.add('deep-link-selected')
   onVisible?.()
 }

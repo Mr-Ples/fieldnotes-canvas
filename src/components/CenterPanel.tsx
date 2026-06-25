@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type CSSProperties, type FormEvent, type KeyboardEvent, type RefObject } from 'react'
+import { useEffect, useLayoutEffect, useRef, useState, type ClipboardEvent, type CSSProperties, type FormEvent, type KeyboardEvent, type MouseEvent, type RefObject } from 'react'
 import { Bold, ChevronDown, Code2, Eye, EyeClosed, File, FileText, Heading2, Italic, Link2, List, LogOut, MessageCircle, MoreVertical, Plus, Quote, Reply, Send, Settings, Trash2, Upload, Video, X } from 'lucide-react'
 import { canvases, comments, projects, resources, type Canvas, type Comment } from '../data'
 import { Avatar, CopyLinkButton, IconButton, TabButton } from './Primitives'
@@ -9,9 +9,13 @@ import AnnotationLayer from './AnnotationLayer'
 import { showConfirm, showPrompt, showToast } from './Popups'
 import { getOwnerToken } from '../services/api'
 import { getCollaborationSettings, saveCollaborationSettings, type AccessMode, type CollaborationSettings } from '../services/collaboration'
+import { deepLinkKind, deepLinkTarget, linkKindForHref, navigateToDeepLink, scrollDeepLinkIntoView, type DeepLinkKind } from '../services/deepLinks'
 
 export default function CenterPanel() {
   const [tab, setTab] = useState<'notes' | 'resources'>('notes')
+  const tabRef = useRef(tab)
+  const scrollByTab = useRef<Record<'notes' | 'resources', number>>({ notes: 0, resources: 0 })
+  const pendingScrollRestore = useRef<number | null>(null)
   const [tag, setTag] = useState('')
   const [addingTag, setAddingTag] = useState(false)
   const [tags, setTags] = useLocalStorage('fieldnotes:tags', ['design research', 'attention', 'interfaces'])
@@ -38,11 +42,46 @@ export default function CenterPanel() {
     ? (projects.find((project) => project.id === collaborationScope.id)?.title ?? collaborationScope.id)
     : (storedCanvases().find((canvas) => canvas.id === collaborationScope.id)?.title ?? activeCanvas.title)
   const dialogPurpose = collaborationDialog === 'invite' ? 'Create invite link' : collaborationDialog === 'view' ? 'My permissions' : 'Permissions'
+  const scrollRoot = () => centerRef.current?.closest<HTMLElement>('.app-shell') ?? null
+  const rememberCurrentTabScroll = () => {
+    const root = scrollRoot()
+    if (root) scrollByTab.current[tabRef.current] = root.scrollTop
+  }
+  const openTab = (next: 'notes' | 'resources', restore = true) => {
+    if (next === tabRef.current) return
+    rememberCurrentTabScroll()
+    tabRef.current = next
+    pendingScrollRestore.current = restore ? scrollByTab.current[next] : null
+    setTab(next)
+  }
+  useLayoutEffect(() => {
+    tabRef.current = tab
+    const top = pendingScrollRestore.current
+    if (top === null) return
+    pendingScrollRestore.current = null
+    const root = scrollRoot()
+    if (root) root.scrollTop = top
+  }, [tab])
 
   useEffect(() => {
-    const target = window.location.hash.slice(1)
-    if (target.startsWith('res-') || target.startsWith('comment-')) setTab('resources')
-    requestAnimationFrame(() => document.getElementById(target)?.scrollIntoView({ behavior: 'smooth', block: 'center' }))
+    const reveal = () => {
+      const target = deepLinkTarget()
+      const kind = deepLinkKind(target)
+      if (kind === 'resource' || kind === 'comment') {
+        openTab('resources', false)
+        scrollDeepLinkIntoView(target)
+      } else if (kind === 'canvas') {
+        const canvas = storedCanvases().find((item) => item.id === target.replace(/^canvas-/, ''))
+        if (!canvas) return
+        openTab('notes')
+        setActiveCanvas(canvas)
+        localStorage.setItem('fieldnotes:active-canvas', JSON.stringify(canvas))
+        window.dispatchEvent(new CustomEvent('fieldnotes:canvas-selected', { detail: canvas }))
+      } else if (kind === 'unknown' && target) scrollDeepLinkIntoView(target)
+    }
+    reveal()
+    window.addEventListener('hashchange', reveal)
+    return () => window.removeEventListener('hashchange', reveal)
   }, [])
   const savePermissions = async () => {
     if (!await showConfirm({
@@ -182,8 +221,8 @@ export default function CenterPanel() {
     </div>
 
     <div className="content-tabs" role="tablist">
-      <TabButton active={tab === 'notes'} onClick={() => setTab('notes')}>Notes</TabButton>
-      <TabButton active={tab === 'resources'} onClick={() => setTab('resources')}>Resources <span className="count">4</span></TabButton>
+      <TabButton active={tab === 'notes'} onClick={() => openTab('notes')}>Notes</TabButton>
+      <TabButton active={tab === 'resources'} onClick={() => openTab('resources')}>Resources <span className="count">4</span></TabButton>
       <button
         type="button"
         className="annotation-visibility-toggle icon-button ml-auto"
@@ -226,8 +265,10 @@ function Notes({ canvasId, setSaved, containerRef, canInteract, canSaveResource,
   useEffect(() => {
     const saved = localStorage.getItem(`fieldnotes:notes-html:${canvasId}`)
     if (saved && editor.current) editor.current.innerHTML = saved
+    annotateEditorLinks(editor.current)
   }, [canvasId])
   const change = (event: FormEvent<HTMLElement>) => {
+    annotateEditorLinks(event.currentTarget)
     setSaved(false)
     localStorage.setItem(`fieldnotes:notes-html:${canvasId}`, event.currentTarget.innerHTML)
     clearTimeout(saveTimer.current)
@@ -237,44 +278,136 @@ function Notes({ canvasId, setSaved, containerRef, canInteract, canSaveResource,
     if (!canInteract) return
     editor.current?.focus()
     document.execCommand(command, false, value)
-    if (editor.current) {
-      localStorage.setItem(`fieldnotes:notes-html:${canvasId}`, editor.current.innerHTML)
-      setSaved(false)
-      clearTimeout(saveTimer.current)
-      saveTimer.current = setTimeout(() => setSaved(true), 650)
+    annotateEditorLinks(editor.current)
+    persistEditor()
+  }
+  const persistEditor = () => {
+    if (!editor.current) return
+    localStorage.setItem(`fieldnotes:notes-html:${canvasId}`, editor.current.innerHTML)
+    setSaved(false)
+    clearTimeout(saveTimer.current)
+    saveTimer.current = setTimeout(() => setSaved(true), 650)
+  }
+  const selectedEditorRange = () => {
+    const selection = window.getSelection()
+    if (!selection || !selection.rangeCount || !editor.current) return null
+    const range = selection.getRangeAt(0)
+    return editor.current.contains(range.commonAncestorContainer) ? range.cloneRange() : null
+  }
+  const restoreEditorRange = (range: Range | null) => {
+    editor.current?.focus()
+    if (!range) return
+    const selection = window.getSelection()
+    selection?.removeAllRanges()
+    selection?.addRange(range)
+  }
+  const preserveEditorScroll = (action: () => void) => {
+    const scrollRoot = editor.current?.closest<HTMLElement>('.app-shell')
+    const scrollTop = scrollRoot?.scrollTop
+    action()
+    if (scrollRoot && scrollTop !== undefined) {
+      requestAnimationFrame(() => {
+        scrollRoot.scrollTop = scrollTop
+        requestAnimationFrame(() => { scrollRoot.scrollTop = scrollTop })
+      })
+      window.setTimeout(() => { scrollRoot.scrollTop = scrollTop }, 120)
     }
+  }
+  const linkSelectedText = (href: string) => {
+    format('createLink', href)
+    persistEditor()
   }
   const addLink = () => {
     void (async () => {
+      const range = selectedEditorRange()
       const href = await showPrompt({
         title: 'Add link',
         message: 'Paste a resource, comment, annotation, chat, or web URL.',
         placeholder: 'https://…',
         confirmLabel: 'Add link',
       })
-      if (href) format('createLink', href.trim())
+      if (!href) return
+      restoreEditorRange(range)
+      linkSelectedText(href.trim())
     })()
+  }
+  const linkifyPaste = (event: ClipboardEvent<HTMLElement>) => {
+    if (!canInteract) return
+    const range = selectedEditorRange()
+    const href = pastedLink(event.clipboardData.getData('text/plain'))
+    if (!href || !range || range.collapsed) return
+    event.preventDefault()
+    restoreEditorRange(range)
+    linkSelectedText(href)
+  }
+  const followInternalLink = (event: MouseEvent<HTMLElement>) => {
+    const link = (event.target as Element).closest<HTMLAnchorElement>('a[href]')
+    if (!link) return
+    const url = new URL(link.href, window.location.href)
+    const currentUrl = new URL(window.location.href)
+    const kind = linkKindForHref(link.href)
+    event.preventDefault()
+    if (url.origin === currentUrl.origin && url.pathname === currentUrl.pathname && url.hash) {
+      const navigate = () => navigateToDeepLink(url.hash)
+      if (kind === 'annotation' || kind === 'llm-chat' || kind === 'discord-message' || kind === 'canvas') preserveEditorScroll(navigate)
+      else navigate()
+      return
+    }
+    window.open(url.toString(), '_blank', 'noopener,noreferrer')
+  }
+  const preventLinkMouseDown = (event: MouseEvent<HTMLElement>) => {
+    if ((event.target as Element).closest<HTMLAnchorElement>('a[href]')) event.preventDefault()
   }
   return <div className={`note-wrap ${annotationMode === 'hidden' ? 'is-annotations-hidden' : ''}`}>
     <div className="format-bar" aria-label="Markdown formatting">
-      <IconButton label="Heading" onClick={() => format('formatBlock', 'h2')}><Heading2 size={16} /></IconButton><IconButton label="Bold" onClick={() => format('bold')}><Bold size={16} /></IconButton><IconButton label="Italic" onClick={() => format('italic')}><Italic size={16} /></IconButton><span className="divider"/><IconButton label="Link" onClick={addLink}><Link2 size={16} /></IconButton><IconButton label="Bullet list" onClick={() => format('insertUnorderedList')}><List size={16} /></IconButton><IconButton label="Quote" onClick={() => format('formatBlock', 'blockquote')}><Quote size={16} /></IconButton><IconButton label="Code" onClick={() => format('formatBlock', 'pre')}><Code2 size={16} /></IconButton><div className="format-spacer"/><span className="markdown-label">Markdown</span>
+      <IconButton label="Heading" onClick={() => format('formatBlock', 'h2')}><Heading2 size={16} /></IconButton><IconButton label="Bold" onClick={() => format('bold')}><Bold size={16} /></IconButton><IconButton label="Italic" onClick={() => format('italic')}><Italic size={16} /></IconButton><span className="divider"/><IconButton label="Link" onMouseDown={(event) => event.preventDefault()} onClick={addLink}><Link2 size={16} /></IconButton><IconButton label="Bullet list" onClick={() => format('insertUnorderedList')}><List size={16} /></IconButton><IconButton label="Quote" onClick={() => format('formatBlock', 'blockquote')}><Quote size={16} /></IconButton><IconButton label="Code" onClick={() => format('formatBlock', 'pre')}><Code2 size={16} /></IconButton><div className="format-spacer"/><span className="markdown-label">Markdown</span>
     </div>
-    <article ref={editor} className="note-editor" contentEditable={canInteract} suppressContentEditableWarning onInput={change} aria-label="Markdown notes" aria-readonly={!canInteract}>
+    <article ref={editor} className="note-editor" contentEditable={canInteract} suppressContentEditableWarning onInput={change} onPaste={linkifyPaste} onMouseDown={preventLinkMouseDown} onClick={followInternalLink} aria-label="Markdown notes" aria-readonly={!canInteract}>
       <h2>Attention is not a resource to extract</h2>
       <p>Most software treats attention as something to capture. A better frame might be to see it as a living material—finite, rhythmic, and shaped by context.</p>
-      <p>The question changes from <em>“how do we keep someone here?”</em> to <mark id="annotation-1" onClick={() => { window.location.hash = 'annotation-comment-1' }}>“what kind of attention does this moment deserve?”</mark></p>
+      <p>The question changes from <em>“how do we keep someone here?”</em> to <mark id="annotation-1" onClick={() => preserveEditorScroll(() => navigateToDeepLink('annotation-comment-1'))}>“what kind of attention does this moment deserve?”</mark></p>
       <blockquote>Good tools do not demand focus. They create the conditions in which focus can emerge.</blockquote>
       <h2>Interfaces as environments</h2>
       <p>An interface can behave less like a sequence of prompts and more like a room. It can hold context, let ideas remain unfinished, and make returning feel natural.</p>
       <ul><li>Make state visible without making it loud.</li><li>Preserve the path back to an idea.</li><li>Let peripheral information stay peripheral.</li><li>Use motion to explain change, not decorate it.</li></ul>
       <h2>Notes toward a calmer system</h2>
-      <p>The best systems support a loop: notice, explore, make, step away, return. <mark id="annotation-2" onClick={() => { window.location.hash = 'annotation-comment-2' }}>The return is as important as the capture.</mark></p>
+      <p>The best systems support a loop: notice, explore, make, step away, return. <mark id="annotation-2" onClick={() => preserveEditorScroll(() => navigateToDeepLink('annotation-comment-2'))}>The return is as important as the capture.</mark></p>
       <p className="empty-paragraph">Continue writing, or type “/” for commands…</p>
     </article>
     <AnnotationLayer editorRef={editor} containerRef={containerRef} canvasId={canvasId} canInteract={canInteract} canSaveResource={canSaveResource} mode={annotationMode} onDocumentChange={() => {
       if (editor.current) localStorage.setItem(`fieldnotes:notes-html:${canvasId}`, editor.current.innerHTML)
     }}/>
   </div>
+}
+
+function pastedLink(value: string) {
+  const trimmed = value.trim()
+  if (!trimmed || /\s/.test(trimmed)) return ''
+  if (trimmed.startsWith('#')) return trimmed
+  try {
+    const url = new URL(trimmed, window.location.href)
+    return /^(https?:|mailto:|tel:)$/i.test(url.protocol) ? trimmed : ''
+  } catch { return '' }
+}
+
+function annotateEditorLinks(root: HTMLElement | null) {
+  if (!root) return
+  root.querySelectorAll<HTMLAnchorElement>('a[href]').forEach((link) => {
+    const kind = linkKindForHref(link.getAttribute('href') ?? '')
+    const label = linkTypeLabel(kind)
+    link.dataset.linkKind = kind
+    link.title = label.title
+  })
+}
+
+function linkTypeLabel(kind: DeepLinkKind) {
+  if (kind === 'resource') return { title: 'Resource link' }
+  if (kind === 'canvas') return { title: 'Canvas link' }
+  if (kind === 'annotation') return { title: 'Annotation link' }
+  if (kind === 'comment') return { title: 'Discussion link' }
+  if (kind === 'llm-chat' || kind === 'discord-message') return { title: 'Chat link' }
+  if (kind === 'external') return { title: 'External link' }
+  return { title: 'Link' }
 }
 
 function Resources({ canInteract }: { canInteract: boolean }) {

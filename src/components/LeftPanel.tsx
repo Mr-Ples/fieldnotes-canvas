@@ -5,6 +5,7 @@ import { CopyLinkButton, IconButton } from './Primitives'
 import { useLocalStorage } from '../hooks/useLocalStorage'
 import { completeChat, type ChatMessage } from '../services/api'
 import { showConfirm, showPrompt, showToast } from './Popups'
+import { deepLinkKind, deepLinkTarget, navigateToDeepLink, scrollDeepLinkIntoView } from '../services/deepLinks'
 
 export function CanvasPanel({ margin = false, onDock }: { margin?: boolean; onDock?: () => void }) {
   const [query, setQuery] = useState('')
@@ -48,6 +49,11 @@ export function CanvasPanel({ margin = false, onDock }: { margin?: boolean; onDo
     localStorage.setItem('fieldnotes:active-canvas', JSON.stringify(canvas))
     window.dispatchEvent(new CustomEvent('fieldnotes:canvas-selected', { detail: canvas }))
   }
+  useEffect(() => {
+    const selected = (event: Event) => setActiveId((event as CustomEvent<Canvas>).detail.id)
+    window.addEventListener('fieldnotes:canvas-selected', selected)
+    return () => window.removeEventListener('fieldnotes:canvas-selected', selected)
+  }, [])
   useEffect(() => {
     if (!margin) return
     const read = () => setHeadings(Array.from(document.querySelectorAll<HTMLElement>('.note-editor h1, .note-editor h2, .note-editor h3')).map((heading, index) => {
@@ -122,7 +128,7 @@ export function CanvasPanel({ margin = false, onDock }: { margin?: boolean; onDo
     window.history.replaceState(null, '', `#${id}`)
   }
   const ActionMenu = ({ id, label, children }: { id: string; label: string; children: ReactNode }) => <div className="directory-menu"><button className="directory-menu-trigger" aria-label={label} aria-expanded={menu === id} onClick={(event) => { event.stopPropagation(); setMenu(menu === id ? null : id) }}><MoreVertical size={14}/></button>{menu === id && <div className="directory-menu-popover" role="menu" onClick={() => setMenu(null)}>{children}</div>}</div>
-  const canvasRow = (canvas: Canvas) => <div className="canvas-row" key={canvas.id}><a href={`#canvas-${canvas.id}`} onClick={() => selectCanvas(canvas)} className={`canvas-item ${canvas.id === activeId ? 'is-current' : ''}`}><span className="canvas-symbol">{canvas.emoji}</span><span className="canvas-name">{canvas.title}</span><time>{canvas.updated}</time></a><div className="directory-actions"><ActionMenu id={`canvas-${canvas.id}`} label={`${canvas.title} options`}><button role="menuitem" onClick={() => canvasAction(canvas, 'invite')}><Link2 size={13}/> Create invite link</button><button role="menuitem" onClick={() => canvasAction(canvas, 'settings')}><Settings size={13}/> Permissions</button><button role="menuitem" className="danger" onClick={() => deleteCanvas(canvas)}><Trash2 size={13}/> Delete canvas</button></ActionMenu></div></div>
+  const canvasRow = (canvas: Canvas) => <div className="canvas-row deep-link-target" id={`canvas-${canvas.id}`} key={canvas.id}><a href={`#canvas-${canvas.id}`} onClick={(event) => { event.preventDefault(); selectCanvas(canvas); navigateToDeepLink(`canvas-${canvas.id}`) }} className={`canvas-item ${canvas.id === activeId ? 'is-current' : ''}`}><span className="canvas-symbol">{canvas.emoji}</span><span className="canvas-name">{canvas.title}</span><time>{canvas.updated}</time></a><div className="directory-actions"><ActionMenu id={`canvas-${canvas.id}`} label={`${canvas.title} options`}><CopyLinkButton target={`canvas-${canvas.id}`}/><button role="menuitem" onClick={() => canvasAction(canvas, 'invite')}><Link2 size={13}/> Create invite link</button><button role="menuitem" onClick={() => canvasAction(canvas, 'settings')}><Settings size={13}/> Permissions</button><button role="menuitem" className="danger" onClick={() => deleteCanvas(canvas)}><Trash2 size={13}/> Delete canvas</button></ActionMenu></div></div>
 
   return <div className={`canvas-directory ${margin ? 'is-margin' : ''}`}>
     <div className="search-box"><Search size={16} /><input aria-label="Search canvases" placeholder="Search canvases" value={query} onChange={(event) => setQuery(event.target.value)} />{margin ? <><button className="margin-dock-button" type="button" onClick={onDock} aria-label="Dock in left panel" title="Dock in left panel"><PanelLeft size={14}/></button><ActionMenu id="margin-actions" label="Canvas margin options"><button role="menuitem" onClick={() => createCanvas()}><Plus size={13}/> New canvas</button><button role="menuitem" onClick={createProject}><FolderPlus size={13}/> New project</button></ActionMenu></> : <kbd>⌘ K</kbd>}</div>
@@ -146,6 +152,15 @@ export function ChatPanel() {
   ])
   const [pending, setPending] = useState(false)
   const [error, setError] = useState('')
+  useEffect(() => {
+    const reveal = () => {
+      const target = deepLinkTarget()
+      if (deepLinkKind(target) === 'llm-chat') scrollDeepLinkIntoView(target)
+    }
+    reveal()
+    window.addEventListener('hashchange', reveal)
+    return () => window.removeEventListener('hashchange', reveal)
+  }, [messages.length])
   const submit = async () => {
     const content = message.trim()
     if (!content || pending) return
@@ -174,7 +189,7 @@ export function ChatPanel() {
     <div className="model-pill"><Bot size={14} /> OpenRouter Free Router <ChevronDown size={13} /></div>
     <div className="messages">
       {messages.map((item) => item.role === 'user'
-        ? <div className="message message-user deep-link-target" id={`chat-${item.id}`} key={item.id}>{item.content}</div>
+        ? <div className="message message-user deep-link-target group" id={`chat-${item.id}`} key={item.id}>{item.content}<div className="mt-1 hidden justify-end group-hover:flex group-focus-within:flex"><CopyLinkButton target={`chat-${item.id}`}/></div></div>
         : <div className="message message-ai deep-link-target" id={`chat-${item.id}`} key={item.id}><Sparkles size={15} /><div>{item.content}<div className="flex items-center gap-2"><button className="save-snippet" onClick={() => saveSnippet(item)}><FileText size={13} /> Save as resource</button><CopyLinkButton target={`chat-${item.id}`}/></div></div></div>)}
       {pending && <div className="message message-ai"><Sparkles size={15}/><div>Thinking…</div></div>}
       {error && <div role="alert" className="message text-red-700">{error}</div>}
