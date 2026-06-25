@@ -6,10 +6,11 @@ import { useLocalStorage } from '../hooks/useLocalStorage'
 import { showConfirm, showToast } from './Popups'
 import { seedAnnotations, type AnnotationThread } from '../data/annotations'
 type Position = { id: string; top: number; compact: boolean; anchorTop: number; anchorBottom: number; anchorRight: number; anchorLeft: number; anchorWidth: number }
+type SelectionState = { range: Range; quote: string; bounds: DOMRect; rects: DOMRect[] }
 
 export default function AnnotationLayer({ editorRef, containerRef, canvasId, canInteract, canSaveResource, mode, onDocumentChange }: { editorRef: RefObject<HTMLElement | null>; containerRef: RefObject<HTMLElement | null>; canvasId: string; canInteract: boolean; canSaveResource: boolean; mode: 'track' | 'compact' | 'hidden'; onDocumentChange: () => void }) {
   const [items, setItems] = useLocalStorage<AnnotationThread[]>('fieldnotes:annotations', seedAnnotations)
-  const [selection, setSelection] = useState<{ range: Range; quote: string; rect: DOMRect } | null>(null)
+  const [selection, setSelection] = useState<SelectionState | null>(null)
   const [composing, setComposing] = useState(false)
   const [body, setBody] = useState('')
   const [reply, setReply] = useState<Record<string, string>>({})
@@ -266,13 +267,19 @@ export default function AnnotationLayer({ editorRef, containerRef, canvasId, can
       if (!editor.contains(range.commonAncestorContainer)) { if (!composing) setSelection(null); return }
       const quote = selected.toString().replace(/\s+/g, ' ').trim()
       if (!quote) return
-      const rects = range.getClientRects()
-      const rect = rects[rects.length - 1] ?? range.getBoundingClientRect()
-      setSelection({ range: range.cloneRange(), quote, rect })
+      const rects = Array.from(range.getClientRects()).filter((rect) => rect.width > 0 && rect.height > 0)
+      const bounds = range.getBoundingClientRect()
+      setSelection({ range: range.cloneRange(), quote, bounds, rects: rects.length ? rects : [bounds] })
     }
     editor.ownerDocument?.addEventListener('selectionchange', updateSelection)
     return () => { editor.ownerDocument?.removeEventListener('selectionchange', updateSelection) }
   }, [editorRef, composing])
+  useEffect(() => {
+    const wrap = editorRef.current?.closest<HTMLElement>('.note-wrap')
+    if (!wrap) return
+    wrap.classList.toggle('is-annotation-composing', composing)
+    return () => { wrap.classList.remove('is-annotation-composing') }
+  }, [composing, editorRef])
 
   useEffect(() => {
     const editor = editorRef.current
@@ -413,9 +420,11 @@ export default function AnnotationLayer({ editorRef, containerRef, canvasId, can
     if (bOrder === undefined) return -1
     return aOrder - bOrder
   }).map(({ item }) => item)
+  const composerTop = selection ? Math.max(12, selection.bounds.top - rootRect.top - 18) : 0
   return <>{mode !== 'hidden' && createPortal(<div className="annotation-ui" aria-live="polite">
-    {canInteract && selection && !composing && <button className="annotation-add" style={{ top: selection.rect.top - rootRect.top + selection.rect.height / 2, left: trackLeft }} onMouseDown={(event) => event.preventDefault()} onClick={openComposer} aria-label="Add annotation to selection"><Plus size={14} /> Add annotation</button>}
-    {selection && composing && <div className="annotation-composer" style={{ top: selection.rect.bottom - rootRect.top + 8, left: trackLeft }}>
+    {selection && composing && <div className="annotation-selection-layer" aria-hidden="true">{selection.rects.map((rect, index) => <div key={index} className="annotation-selection-highlight" style={{ top: rect.top - rootRect.top, left: rect.left - rootRect.left, width: rect.width, height: rect.height }} />)}</div>}
+    {canInteract && selection && !composing && <button className="annotation-add" style={{ top: selection.bounds.top - rootRect.top + selection.bounds.height / 2, left: trackLeft }} onMouseDown={(event) => event.preventDefault()} onClick={openComposer} aria-label="Add annotation to selection"><Plus size={14} /> Add annotation</button>}
+    {selection && composing && <div className="annotation-composer" style={{ top: composerTop, left: trackLeft }}>
       <div className="annotation-composer-head"><span><MessageSquareText size={14} /> New annotation</span><button onClick={closeComposer} aria-label="Cancel annotation"><X size={15} /></button></div>
       <blockquote>“{selection.quote}”</blockquote>
       <textarea ref={composerRef} value={body} onChange={(event) => setBody(event.target.value)} onKeyDown={(event) => { if ((event.metaKey || event.ctrlKey) && event.key === 'Enter') create() }} placeholder="Add a comment…" aria-label="Annotation comment" />

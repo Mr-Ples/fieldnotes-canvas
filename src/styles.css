@@ -224,6 +224,8 @@
   .link-preview-url { @apply truncate; }
   .note-editor mark, .note-editor .annotation-highlight { @apply cursor-pointer text-inherit; background: linear-gradient(transparent 10%, #f5dfa0 10%, #f5dfa0 90%, transparent 90%); box-decoration-break: clone; -webkit-box-decoration-break: clone; }
   .note-editor .annotation-highlight:hover, .note-editor .annotation-highlight:focus, .note-editor .annotation-highlight.is-annotation-active { background: linear-gradient(transparent 6%, #efcb68 6%, #efcb68 94%, transparent 94%); }
+  .note-wrap.is-annotation-composing .note-editor *::selection, .note-wrap.is-annotation-composing .note-editor::selection { background: transparent; color: inherit; }
+  .note-wrap.is-annotation-composing .note-editor *::-moz-selection, .note-wrap.is-annotation-composing .note-editor::-moz-selection { background: transparent; color: inherit; }
   .note-wrap.is-annotations-hidden .annotation-highlight, .note-wrap.is-annotations-hidden .annotation-highlight:hover, .note-wrap.is-annotations-hidden .annotation-highlight:focus { background: transparent !important; cursor: text; }
   .note-wrap.is-annotations-hidden .annotation-highlight.is-annotation-active { background: linear-gradient(transparent 6%, #efcb68 6%, #efcb68 94%, transparent 94%) !important; cursor: pointer; }
   .note-editor blockquote { @apply my-6 border-l-2 border-emerald-900/35 py-0.5 pl-5 font-serif text-[19px] italic text-stone-600; }
@@ -269,6 +271,8 @@
   .comment-actions button { @apply flex cursor-pointer items-center gap-1 border-0 bg-transparent p-0 text-[9px] text-stone-500; }
   .comment .comment { @apply mt-2 border-t border-stone-200 pt-2; }
   .annotation-ui { @apply pointer-events-none absolute inset-0 z-50; }
+  .annotation-selection-layer { @apply pointer-events-none absolute inset-0 z-40; }
+  .annotation-selection-highlight { @apply absolute rounded-[2px] bg-amber-300/45; }
   .annotation-thread-layer { @apply pointer-events-none absolute inset-0; }
   .annotation-compact-layer { @apply pointer-events-none absolute inset-0 z-[1000]; }
   .annotation-add { @apply pointer-events-auto absolute z-50 flex -translate-y-1/2 cursor-pointer items-center gap-1.5 rounded-md border border-emerald-900/20 bg-forest px-3 py-2 text-[10px] font-semibold whitespace-nowrap text-white shadow-lg; }
