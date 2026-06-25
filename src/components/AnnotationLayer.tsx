@@ -4,18 +4,11 @@ import { BookmarkPlus, Check, Link2, MessageSquareText, MoreVertical, Plus, Send
 import { Avatar } from './Primitives'
 import { useLocalStorage } from '../hooks/useLocalStorage'
 import { showConfirm, showToast } from './Popups'
-
-type AnnotationReply = string | { id?: string; author: string; authorId?: string; avatar?: string; initials: string; body: string }
-type Annotation = { id: string; anchorId?: string; quote: string; author: string; authorId?: string; avatar?: string; initials: string; time: string; body: string; replies?: AnnotationReply[] }
+import { seedAnnotations, type AnnotationThread } from '../data/annotations'
 type Position = { id: string; top: number; compact: boolean; anchorTop: number; anchorBottom: number; anchorRight: number; anchorLeft: number; anchorWidth: number }
 
-const seedAnnotations: Annotation[] = [
-  { id: 'annotation-comment-1', anchorId: 'annotation-1', quote: '“what kind of attention does this moment deserve?”', author: 'Mara Chen', initials: 'MC', time: '24m ago', body: 'This framing is strong. It moves the responsibility back to the designer, not the user.' },
-  { id: 'annotation-comment-2', anchorId: 'annotation-2', quote: 'The return is as important as the capture.', author: 'Jon Bell', initials: 'JB', time: '1h ago', body: 'Could we connect this to the idea of “resumability” in tools for thought?' },
-]
-
 export default function AnnotationLayer({ editorRef, containerRef, canvasId, canInteract, canSaveResource, mode, onDocumentChange }: { editorRef: RefObject<HTMLElement | null>; containerRef: RefObject<HTMLElement | null>; canvasId: string; canInteract: boolean; canSaveResource: boolean; mode: 'track' | 'hidden'; onDocumentChange: () => void }) {
-  const [items, setItems] = useLocalStorage<Annotation[]>('fieldnotes:annotations', seedAnnotations)
+  const [items, setItems] = useLocalStorage<AnnotationThread[]>('fieldnotes:annotations', seedAnnotations)
   const [selection, setSelection] = useState<{ range: Range; quote: string; rect: DOMRect } | null>(null)
   const [composing, setComposing] = useState(false)
   const [body, setBody] = useState('')
@@ -375,7 +368,7 @@ export default function AnnotationLayer({ editorRef, containerRef, canvasId, can
       showToast('Annotation deleted')
     })()
   }
-  const saveAsResource = (item: Annotation) => {
+  const saveAsResource = (item: AnnotationThread) => {
     const key = 'fieldnotes:resources'
     const current = JSON.parse(localStorage.getItem(key) ?? '[]') as unknown[]
     const replies = (item.replies ?? []).map((value) => typeof value === 'string' ? `You: ${value}` : `${value.author}: ${value.body}`)
@@ -387,10 +380,9 @@ export default function AnnotationLayer({ editorRef, containerRef, canvasId, can
 
   const root = containerRef.current
   if (!root) return null
-  if (mode === 'hidden') return null
   const rootRect = root.getBoundingClientRect()
   const trackLeft = Math.max(16, Math.min(root.clientWidth - 308, editorRef.current ? editorRef.current.getBoundingClientRect().right - rootRect.left + 18 : root.clientWidth - 308))
-  const renderCard = (item: Annotation, foreground: boolean) => <article className="annotation-card" id={item.id}>
+  const renderCard = (item: AnnotationThread, foreground: boolean) => <article className="annotation-card" id={item.id}>
     <div className="annotation-meta"><Avatar initials={item.initials} src={item.avatar} name={item.author} color={item.author === 'You' ? 'ink' : 'sage'} /><div><strong>{item.author}</strong><time>{item.time}</time></div><div className="annotation-menu"><button aria-label="Annotation options" aria-expanded={menu === item.id} onClick={() => setMenu(menu === item.id ? null : item.id)}><MoreVertical size={16} /></button>{menu === item.id && <div role="menu"><button role="menuitem" onClick={() => void copyLink(item.id)}><Link2 size={13} /> Copy link</button>{canSaveResource && <button role="menuitem" onClick={() => saveAsResource(item)}><BookmarkPlus size={13} /> Save as resource</button>}{canInteract && <button role="menuitem" onClick={() => remove(item.id)}><Trash2 size={13} /> Delete thread</button>}</div>}</div></div>
     <blockquote className="annotation-quote">“{item.quote}”</blockquote>
     <p>{item.body}</p>
@@ -401,7 +393,7 @@ export default function AnnotationLayer({ editorRef, containerRef, canvasId, can
   const compactRoot = root.closest<HTMLElement>('.app-shell') ?? document.body
   const compactRootRect = compactRoot.getBoundingClientRect()
   const documentOrder = new Map(positions.map((position, index) => [position.id, index]))
-  const visiblePositions = annotationTabOpen ? [] : positions
+  const visiblePositions = mode === 'hidden' || annotationTabOpen ? [] : positions
   const regularPositions = visiblePositions.filter((position) => !position.compact)
   const compactPositions = visiblePositions.filter((position) => position.compact)
   const renderThread = (position: Position) => {
@@ -421,7 +413,7 @@ export default function AnnotationLayer({ editorRef, containerRef, canvasId, can
     if (bOrder === undefined) return -1
     return aOrder - bOrder
   }).map(({ item }) => item)
-  return <>{createPortal(<div className="annotation-ui" aria-live="polite">
+  return <>{mode !== 'hidden' && createPortal(<div className="annotation-ui" aria-live="polite">
     {canInteract && selection && !composing && <button className="annotation-add" style={{ top: selection.rect.top - rootRect.top + selection.rect.height / 2, left: trackLeft }} onMouseDown={(event) => event.preventDefault()} onClick={openComposer} aria-label="Add annotation to selection"><Plus size={14} /> Add annotation</button>}
     {selection && composing && <div className="annotation-composer" style={{ top: selection.rect.bottom - rootRect.top + 8, left: trackLeft }}>
       <div className="annotation-composer-head"><span><MessageSquareText size={14} /> New annotation</span><button onClick={closeComposer} aria-label="Cancel annotation"><X size={15} /></button></div>

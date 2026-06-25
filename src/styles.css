@@ -170,19 +170,37 @@
   .markdown-label { @apply text-[9px] text-stone-400; }
   .note-editor { @apply min-h-[calc(100dvh-280px)] px-1 pt-7 pb-40 font-serif text-[17px] leading-[1.76] text-stone-700 outline-none; }
   .note-editor h2 { @apply mt-8 mb-2.5 font-serif text-[25px] leading-tight font-semibold text-ink first:mt-0; }
-  .note-editor h1, .note-editor h2, .note-editor h3, .deep-link-target { scroll-margin-top: var(--canvas-scroll-offset); }
+  .note-editor h1, .note-editor h2, .note-editor h3, .note-editor h4, .note-editor h5, .note-editor h6, .deep-link-target { scroll-margin-top: var(--canvas-scroll-offset); }
+  .note-editor h1, .note-editor h2, .note-editor h3, .note-editor h4, .note-editor h5, .note-editor h6 { @apply relative flex items-start gap-2; }
+  .note-editor .heading-link { @apply mt-[0.18em] inline-grid size-6 shrink-0 place-items-center rounded-md text-stone-300 no-underline opacity-0 transition-opacity hover:bg-stone-100 hover:text-forest focus-visible:opacity-100; }
+  .note-editor h1:hover .heading-link, .note-editor h2:hover .heading-link, .note-editor h3:hover .heading-link, .note-editor h4:hover .heading-link, .note-editor h5:hover .heading-link, .note-editor h6:hover .heading-link, .note-editor h1:focus-within .heading-link, .note-editor h2:focus-within .heading-link, .note-editor h3:focus-within .heading-link, .note-editor h4:focus-within .heading-link, .note-editor h5:focus-within .heading-link, .note-editor h6:focus-within .heading-link { @apply opacity-100; }
+  .note-editor .heading-link svg { @apply size-3.5; }
   .note-editor p { @apply mt-0 mb-4; }
   .note-editor a { @apply relative cursor-pointer font-semibold text-emerald-800 underline decoration-emerald-700/45 decoration-2 underline-offset-4; }
   .note-editor a:hover, .note-editor a:focus { @apply text-forest decoration-forest; }
-  .note-editor a::after { content: ""; mask: var(--link-icon, url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2.2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M15 2h-4a2 2 0 0 0-2 2v11a2 2 0 0 0 2 2h8a2 2 0 0 0 2-2V8'/%3E%3Cpath d='M16.706 2.706A2.4 2.4 0 0 0 15 2v5a1 1 0 0 0 1 1h5a2.4 2.4 0 0 0-.706-1.706z'/%3E%3Cpath d='M5 7a2 2 0 0 0-2 2v11a2 2 0 0 0 2 2h8a2 2 0 0 0 1.732-1'/%3E%3C/svg%3E")) center / 13px 13px no-repeat; -webkit-mask: var(--link-icon, url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2.2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M15 2h-4a2 2 0 0 0-2 2v11a2 2 0 0 0 2 2h8a2 2 0 0 0 2-2V8'/%3E%3Cpath d='M16.706 2.706A2.4 2.4 0 0 0 15 2v5a1 1 0 0 0 1 1h5a2.4 2.4 0 0 0-.706-1.706z'/%3E%3Cpath d='M5 7a2 2 0 0 0-2 2v11a2 2 0 0 0 2 2h8a2 2 0 0 0 1.732-1'/%3E%3C/svg%3E")) center / 13px 13px no-repeat; @apply pointer-events-none absolute right-0 bottom-[1.1em] z-10 h-[13px] w-[13px] translate-x-[80%] bg-emerald-800 opacity-65; }
-  .note-editor a[data-link-kind="resource"]::after, .note-editor a[data-link-kind="canvas"]::after { --link-icon: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2.2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M15 2h-4a2 2 0 0 0-2 2v11a2 2 0 0 0 2 2h8a2 2 0 0 0 2-2V8'/%3E%3Cpath d='M16.706 2.706A2.4 2.4 0 0 0 15 2v5a1 1 0 0 0 1 1h5a2.4 2.4 0 0 0-.706-1.706z'/%3E%3Cpath d='M5 7a2 2 0 0 0-2 2v11a2 2 0 0 0 2 2h8a2 2 0 0 0 1.732-1'/%3E%3C/svg%3E"); }
-  .note-editor a[data-link-kind="annotation"]::after, .note-editor a[data-link-kind="comment"]::after { --link-icon: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2.2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M22 17a2 2 0 0 1-2 2H6.828a2 2 0 0 0-1.414.586l-2.202 2.202A.71.71 0 0 1 2 21.286V5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2z'/%3E%3Cpath d='M7 11h10'/%3E%3Cpath d='M7 15h6'/%3E%3Cpath d='M7 7h8'/%3E%3C/svg%3E"); }
-  .note-editor a[data-link-kind="llm-chat"]::after { --link-icon: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2.2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M22 17a2 2 0 0 1-2 2H6.828a2 2 0 0 0-1.414.586l-2.202 2.202A.71.71 0 0 1 2 21.286V5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2z'/%3E%3C/svg%3E"); }
-  .note-editor a[data-link-kind="discord-message"]::after { --link-icon: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2.2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M16 10a2 2 0 0 1-2 2H6.828a2 2 0 0 0-1.414.586l-2.202 2.202A.71.71 0 0 1 2 14.286V4a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z'/%3E%3Cpath d='M20 9a2 2 0 0 1 2 2v10.286a.71.71 0 0 1-1.212.502l-2.202-2.202A2 2 0 0 0 17.172 19H10a2 2 0 0 1-2-2v-1'/%3E%3C/svg%3E"); }
-  .note-editor a[data-link-kind="external"]::after { --link-icon: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2.2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M15 3h6v6'/%3E%3Cpath d='M10 14 21 3'/%3E%3Cpath d='M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6'/%3E%3C/svg%3E"); }
+  .note-editor a .note-link-marker { @apply pointer-events-none absolute right-0 bottom-[1.08em] z-10 inline-flex translate-x-[80%] text-emerald-700 opacity-70 transition-opacity duration-150; }
+  .note-editor a .note-link-marker svg { @apply block size-[12px]; }
+  .note-wrap.is-annotations-hidden .note-editor a .note-link-marker { @apply opacity-0; }
+  .note-wrap.is-annotations-hidden .note-editor a:hover .note-link-marker, .note-wrap.is-annotations-hidden .note-editor a:focus-visible .note-link-marker { @apply opacity-70; }
+  .link-preview-card { @apply fixed z-[1200] max-h-[min(430px,calc(100dvh-24px))] w-[min(352px,calc(100vw-24px))] overflow-y-auto overflow-x-hidden rounded-xl border border-stone-200 bg-white/95 p-3 text-left shadow-2xl backdrop-blur-sm; user-select: text; }
+  .link-preview-head { @apply flex items-start justify-between gap-3; }
+  .link-preview-head strong { @apply block min-w-0 flex-1 truncate text-[12px] font-semibold text-ink; }
+  .link-preview-head span { @apply shrink-0 text-[8px] font-bold uppercase tracking-wider text-emerald-700; }
+  .link-preview-author { @apply flex min-w-0 flex-1 items-center gap-2; }
+  .link-preview-author img, .link-preview-author > span { @apply grid size-7 shrink-0 place-items-center rounded-full bg-indigo-100 object-cover text-[8px] font-bold text-indigo-700; }
+  .link-preview-card h4 { @apply my-2 font-serif text-[13px] leading-tight font-semibold text-ink; }
+  .link-preview-card p { @apply mt-2 mb-0 break-words text-[10px] leading-relaxed text-stone-600; }
+  .link-preview-subtitle { @apply font-serif text-[11px] text-stone-500; }
+  .link-preview-tags { @apply mt-2 flex flex-wrap gap-1; }
+  .link-preview-tags span { @apply rounded-full border border-stone-200 bg-stone-50 px-1.5 py-0.5 text-[8px] text-stone-500; }
+  .link-preview-card blockquote { @apply my-2 break-words border-l-2 border-amber-400 bg-amber-50 px-2 py-1 font-serif text-[10px] leading-relaxed italic text-stone-600; }
+  .link-preview-card pre { @apply mt-2 mb-0 max-h-48 overflow-y-auto overflow-x-hidden whitespace-pre-wrap break-words rounded-lg bg-stone-50 p-2 font-serif text-[10px] leading-relaxed text-stone-700; }
+  .link-preview-card small { @apply mt-2 block text-[8px] leading-relaxed text-stone-400; }
+  .link-preview-url { @apply truncate; }
   .note-editor mark, .note-editor .annotation-highlight { @apply cursor-pointer text-inherit; background: linear-gradient(transparent 10%, #f5dfa0 10%, #f5dfa0 90%, transparent 90%); box-decoration-break: clone; -webkit-box-decoration-break: clone; }
   .note-editor .annotation-highlight:hover, .note-editor .annotation-highlight:focus, .note-editor .annotation-highlight.is-annotation-active { background: linear-gradient(transparent 6%, #efcb68 6%, #efcb68 94%, transparent 94%); }
   .note-wrap.is-annotations-hidden .annotation-highlight, .note-wrap.is-annotations-hidden .annotation-highlight:hover, .note-wrap.is-annotations-hidden .annotation-highlight:focus { background: transparent !important; cursor: text; }
+  .note-wrap.is-annotations-hidden .annotation-highlight.is-annotation-active { background: linear-gradient(transparent 6%, #efcb68 6%, #efcb68 94%, transparent 94%) !important; cursor: pointer; }
   .note-editor blockquote { @apply my-6 border-l-2 border-emerald-900/35 py-0.5 pl-5 font-serif text-[19px] italic text-stone-600; }
   .note-editor ul { @apply list-disc pl-6; }
   .note-editor li { @apply my-1 pl-1; }

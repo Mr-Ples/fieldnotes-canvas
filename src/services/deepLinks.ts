@@ -1,4 +1,4 @@
-export type DeepLinkKind = 'annotation' | 'canvas' | 'comment' | 'discord-message' | 'resource' | 'llm-chat' | 'external' | 'unknown'
+export type DeepLinkKind = 'annotation' | 'canvas' | 'comment' | 'discord-message' | 'resource' | 'llm-chat' | 'heading' | 'external' | 'unknown'
 
 export function deepLinkTarget(hash = window.location.hash) {
   return hash.replace(/^#/, '')
@@ -11,6 +11,10 @@ export function deepLinkKind(target = deepLinkTarget()): DeepLinkKind {
   if (target.startsWith('chat-')) return 'llm-chat'
   if (target.startsWith('res-')) return 'resource'
   if (target.startsWith('comment-') || target.startsWith('reply-')) return 'comment'
+  if (target && typeof document !== 'undefined') {
+    const element = document.getElementById(target)
+    if (element?.matches('h1, h2, h3, h4, h5, h6')) return 'heading'
+  }
   return 'unknown'
 }
 
@@ -43,6 +47,10 @@ function revealDeepLinkTarget(target: string, behavior: ScrollBehavior) {
   if (!element) return
   document.querySelectorAll('.deep-link-selected').forEach((current) => current.classList.remove('deep-link-selected'))
   element.classList.add('deep-link-selected')
+  if (element.matches('h1, h2, h3, h4, h5, h6') && element.closest('.center-panel')) {
+    scrollHeadingToCanvasOffset(element, behavior)
+    return
+  }
   if (isFullyInView(element)) return
   const appShell = document.querySelector<HTMLElement>('.app-shell')
   const appScrollTop = appShell?.scrollTop
@@ -50,6 +58,14 @@ function revealDeepLinkTarget(target: string, behavior: ScrollBehavior) {
   if (!element.closest('.center-panel') && appShell && appScrollTop !== undefined) {
     requestAnimationFrame(() => { appShell.scrollTop = appScrollTop })
   }
+}
+
+function scrollHeadingToCanvasOffset(element: HTMLElement, behavior: ScrollBehavior) {
+  const scrollRoot = element.closest<HTMLElement>('.app-shell')
+  if (!scrollRoot) return
+  const stickyOffset = Number.parseFloat(getComputedStyle(scrollRoot).getPropertyValue('--canvas-scroll-offset')) || 160
+  const top = element.getBoundingClientRect().top - scrollRoot.getBoundingClientRect().top + scrollRoot.scrollTop - stickyOffset
+  scrollRoot.scrollTo({ top, behavior })
 }
 
 function isFullyInView(element: HTMLElement) {

@@ -219,6 +219,18 @@ export default function CanvasChat() {
     return () => clearInterval(timer)
   }, [])
 
+  useEffect(() => {
+    if (!messages.length) return
+    localStorage.setItem(`fieldnotes:discord-messages:${canvas.id}`, JSON.stringify(messages.slice(-200).map((message) => ({
+      id: message.id,
+      origin: message.origin,
+      authorName: message.authorName,
+      authorAvatar: message.authorAvatar,
+      content: message.content,
+      createdAt: message.createdAt,
+    }))))
+  }, [canvas.id, messages])
+
   useLayoutEffect(() => {
     const element = composerRef.current
     if (!element) return
@@ -501,7 +513,16 @@ export default function CanvasChat() {
     </div>
     <Virtuoso ref={list} className={'min-h-0 flex-1 ' + (linkReady ? '' : 'invisible')} data={messages} followOutput={false} rangeChanged={(range) => chatScrollPositions.set(canvas.id, range.startIndex)} itemContent={(_, message) => {
       const parent = message.replyTo ? byId.get(message.replyTo) : undefined
-      return <article id={`discord-message-${message.id}`} className="deep-link-target group relative px-3 py-2 hover:bg-stone-100/70" onMouseEnter={() => { if (popover && popover.message?.id !== message.id) setPopover(undefined) }}>
+      return <article
+        id={`discord-message-${message.id}`}
+        className="deep-link-target group relative px-3 py-2 hover:bg-stone-100/70"
+        data-discord-author-name={message.authorName}
+        data-discord-author-avatar={message.authorAvatar ?? ''}
+        data-discord-content={message.content}
+        data-discord-origin={message.origin}
+        data-discord-created-at={message.createdAt}
+        onMouseEnter={() => { if (popover && popover.message?.id !== message.id) setPopover(undefined) }}
+      >
         <div className="invisible absolute -top-3 right-2 z-20 flex items-center rounded-md border border-stone-200 bg-white p-0.5 shadow-sm group-hover:visible group-focus-within:visible">
           {canWrite && QUICK_REACTIONS.map((emoji) => <button className="grid size-7 place-items-center rounded border-0 bg-transparent text-sm hover:bg-stone-100" key={emoji} title={'React ' + emoji} onClick={() => void react(message, emoji)}>{emoji}</button>)}
           {canWrite && <button className="grid size-7 place-items-center rounded border-0 bg-transparent text-stone-500 hover:bg-stone-100" title="More reactions" onClick={(event) => togglePopover('emoji', message, event)}><SmilePlus size={14} /></button>}

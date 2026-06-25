@@ -6,10 +6,12 @@ import { useLocalStorage } from '../hooks/useLocalStorage'
 import { CloudinaryMediaStorage } from '../services/media'
 import DiscordIdentity, { signOutDiscord, type DiscordUser } from './DiscordIdentity'
 import AnnotationLayer from './AnnotationLayer'
+import LinkPreviewLayer from './LinkPreviewLayer'
 import { showConfirm, showPrompt, showToast } from './Popups'
 import { getOwnerToken } from '../services/api'
 import { getCollaborationSettings, saveCollaborationSettings, type AccessMode, type CollaborationSettings } from '../services/collaboration'
-import { deepLinkKind, deepLinkTarget, linkKindForHref, navigateToDeepLink, scrollDeepLinkIntoView, type DeepLinkKind } from '../services/deepLinks'
+import { deepLinkKind, deepLinkTarget, linkKindForHref, navigateToDeepLink, scrollDeepLinkIntoView } from '../services/deepLinks'
+import { decorateEditorLinks } from '../services/linkContent'
 
 export default function CenterPanel() {
   const [tab, setTab] = useState<'notes' | 'resources'>('notes')
@@ -34,9 +36,18 @@ export default function CenterPanel() {
   const annotationMode: 'track' | 'hidden' = storedAnnotationMode === 'hidden' ? 'hidden' : 'track'
   const centerRef = useRef<HTMLElement>(null)
   const accountMenuRef = useRef<HTMLDivElement>(null)
+  const pendingHeadingScroll = useRef<string | null>(null)
   const [activeCanvas, setActiveCanvas] = useState<Canvas>(() => {
+    const requested = new URL(window.location.href).searchParams.get('canvas')
+    const linked = requested ? storedCanvases().find((canvas) => canvas.id === requested) : undefined
+    if (linked) {
+      localStorage.setItem('fieldnotes:active-canvas', JSON.stringify(linked))
+      return linked
+    }
     const stored = localStorage.getItem('fieldnotes:active-canvas')
-    return stored ? JSON.parse(stored) as Canvas : canvases[0]
+    if (stored) return JSON.parse(stored) as Canvas
+    localStorage.setItem('fieldnotes:active-canvas', JSON.stringify(canvases[0]))
+    return canvases[0]
   })
   const scopeName = collaborationScope.type === 'project'
     ? (projects.find((project) => project.id === collaborationScope.id)?.title ?? collaborationScope.id)
@@ -64,9 +75,29 @@ export default function CenterPanel() {
   }, [tab])
 
   useEffect(() => {
+    if (tab !== 'notes' || !pendingHeadingScroll.current) return
+    const target = pendingHeadingScroll.current
+    pendingHeadingScroll.current = null
+    window.setTimeout(() => scrollDeepLinkIntoView(target, 'smooth'), 80)
+  }, [activeCanvas.id, tab])
+
+  useEffect(() => {
     const reveal = () => {
+      const url = new URL(window.location.href)
       const target = deepLinkTarget()
       const kind = deepLinkKind(target)
+      const linkedCanvasId = url.searchParams.get('canvas')
+      const activeId = (JSON.parse(localStorage.getItem('fieldnotes:active-canvas') ?? JSON.stringify(activeCanvas)) as Canvas).id
+      if (target && linkedCanvasId && linkedCanvasId !== activeId) {
+        const canvas = storedCanvases().find((item) => item.id === linkedCanvasId)
+        if (!canvas) return
+        pendingHeadingScroll.current = target
+        openTab('notes', false)
+        setActiveCanvas(canvas)
+        localStorage.setItem('fieldnotes:active-canvas', JSON.stringify(canvas))
+        window.dispatchEvent(new CustomEvent('fieldnotes:canvas-selected', { detail: canvas }))
+        return
+      }
       if (kind === 'resource' || kind === 'comment') {
         openTab('resources', false)
         scrollDeepLinkIntoView(target)
@@ -77,7 +108,7 @@ export default function CenterPanel() {
         setActiveCanvas(canvas)
         localStorage.setItem('fieldnotes:active-canvas', JSON.stringify(canvas))
         window.dispatchEvent(new CustomEvent('fieldnotes:canvas-selected', { detail: canvas }))
-      } else if (kind === 'unknown' && target) scrollDeepLinkIntoView(target)
+      } else if ((kind === 'unknown' || kind === 'heading') && target) scrollDeepLinkIntoView(target)
     }
     reveal()
     window.addEventListener('hashchange', reveal)
@@ -233,8 +264,9 @@ export default function CenterPanel() {
         {annotationMode === 'track' ? <Eye size={16} /> : <EyeClosed size={16} />}
       </button>
     </div>
-    {tab === 'notes' ? <Notes key={activeCanvas.id} canvasId={activeCanvas.id} setSaved={setSaved} containerRef={centerRef} canInteract={canUseCanvas} canSaveResource={memberAccess.resources} annotationMode={annotationMode} /> : <Resources canInteract={memberAccess.resources} />}
+    {tab === 'notes' ? <Notes key={activeCanvas.id} canvasId={activeCanvas.id} setSaved={setSaved} containerRef={centerRef} canInteract={canUseCanvas} canSaveResource={memberAccess.resources} annotationMode={annotationMode} onPendingHeadingScroll={(target) => { pendingHeadingScroll.current = target }} /> : <Resources canInteract={memberAccess.resources} />}
     <div className="discussion-view"><Comments canInteract={memberAccess.discussion} canSaveResource={memberAccess.resources} /></div>
+    <LinkPreviewLayer rootRef={centerRef} />
   </main>
 }
 
@@ -259,18 +291,18 @@ function PermissionSelect({ label, description, value, onChange }: { label: stri
   return <label className="permission-select"><span><strong>{label}</strong><small>{description}</small></span><select value={value} onChange={(event) => onChange(event.target.value as AccessMode)}><option value="public">Anyone can suggest</option><option value="login">Login required</option><option value="readonly">Admin + invite only</option></select></label>
 }
 
-function Notes({ canvasId, setSaved, containerRef, canInteract, canSaveResource, annotationMode }: { canvasId: string; setSaved: (value: boolean) => void; containerRef: RefObject<HTMLElement | null>; canInteract: boolean; canSaveResource: boolean; annotationMode: 'track' | 'hidden' }) {
+function Notes({ canvasId, setSaved, containerRef, canInteract, canSaveResource, annotationMode, onPendingHeadingScroll }: { canvasId: string; setSaved: (value: boolean) => void; containerRef: RefObject<HTMLElement | null>; canInteract: boolean; canSaveResource: boolean; annotationMode: 'track' | 'hidden'; onPendingHeadingScroll: (target: string) => void }) {
   const saveTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined)
   const editor = useRef<HTMLElement>(null)
   useEffect(() => {
     const saved = localStorage.getItem(`fieldnotes:notes-html:${canvasId}`)
     if (saved && editor.current) editor.current.innerHTML = saved
-    annotateEditorLinks(editor.current)
+    decorateEditorLinks(editor.current)
   }, [canvasId])
   const change = (event: FormEvent<HTMLElement>) => {
-    annotateEditorLinks(event.currentTarget)
+    decorateEditorLinks(event.currentTarget)
     setSaved(false)
-    localStorage.setItem(`fieldnotes:notes-html:${canvasId}`, event.currentTarget.innerHTML)
+    localStorage.setItem(`fieldnotes:notes-html:${canvasId}`, serializedEditorHtml(event.currentTarget))
     clearTimeout(saveTimer.current)
     saveTimer.current = setTimeout(() => setSaved(true), 650)
   }
@@ -278,12 +310,12 @@ function Notes({ canvasId, setSaved, containerRef, canInteract, canSaveResource,
     if (!canInteract) return
     editor.current?.focus()
     document.execCommand(command, false, value)
-    annotateEditorLinks(editor.current)
+    decorateEditorLinks(editor.current)
     persistEditor()
   }
   const persistEditor = () => {
     if (!editor.current) return
-    localStorage.setItem(`fieldnotes:notes-html:${canvasId}`, editor.current.innerHTML)
+    localStorage.setItem(`fieldnotes:notes-html:${canvasId}`, serializedEditorHtml(editor.current))
     setSaved(false)
     clearTimeout(saveTimer.current)
     saveTimer.current = setTimeout(() => setSaved(true), 650)
@@ -347,8 +379,32 @@ function Notes({ canvasId, setSaved, containerRef, canInteract, canSaveResource,
     const currentUrl = new URL(window.location.href)
     const kind = linkKindForHref(link.href)
     event.preventDefault()
+    if (link.classList.contains('heading-link') && url.hash) {
+      const copyUrl = new URL(window.location.href)
+      copyUrl.searchParams.set('canvas', canvasId)
+      copyUrl.hash = url.hash
+      void navigator.clipboard.writeText(copyUrl.toString()).then(() => showToast('Heading link copied')).catch(() => showToast('Could not copy link'))
+      return
+    }
     if (url.origin === currentUrl.origin && url.pathname === currentUrl.pathname && url.hash) {
-      const navigate = () => navigateToDeepLink(url.hash)
+      const linkedCanvasId = url.searchParams.get('canvas')
+      const navigate = () => {
+        if (linkedCanvasId && linkedCanvasId !== canvasId) {
+          const canvas = storedCanvases().find((item) => item.id === linkedCanvasId)
+          if (canvas) {
+            onPendingHeadingScroll(url.hash.slice(1))
+            localStorage.setItem('fieldnotes:active-canvas', JSON.stringify(canvas))
+            window.dispatchEvent(new CustomEvent('fieldnotes:canvas-selected', { detail: canvas }))
+          }
+        }
+        const previous = window.location.href
+        window.history.pushState(null, '', url.pathname + url.search + url.hash)
+        window.dispatchEvent(new HashChangeEvent('hashchange', { oldURL: previous, newURL: window.location.href }))
+        if (kind === 'heading' || linkedCanvasId) {
+          if (linkedCanvasId && linkedCanvasId !== canvasId) return
+          window.setTimeout(() => scrollDeepLinkIntoView(url.hash.slice(1), 'smooth'), 0)
+        }
+      }
       if (kind === 'annotation' || kind === 'llm-chat' || kind === 'discord-message' || kind === 'canvas') preserveEditorScroll(navigate)
       else navigate()
       return
@@ -375,7 +431,7 @@ function Notes({ canvasId, setSaved, containerRef, canInteract, canSaveResource,
       <p className="empty-paragraph">Continue writing, or type “/” for commands…</p>
     </article>
     <AnnotationLayer editorRef={editor} containerRef={containerRef} canvasId={canvasId} canInteract={canInteract} canSaveResource={canSaveResource} mode={annotationMode} onDocumentChange={() => {
-      if (editor.current) localStorage.setItem(`fieldnotes:notes-html:${canvasId}`, editor.current.innerHTML)
+      if (editor.current) localStorage.setItem(`fieldnotes:notes-html:${canvasId}`, serializedEditorHtml(editor.current))
     }}/>
   </div>
 }
@@ -390,24 +446,11 @@ function pastedLink(value: string) {
   } catch { return '' }
 }
 
-function annotateEditorLinks(root: HTMLElement | null) {
-  if (!root) return
-  root.querySelectorAll<HTMLAnchorElement>('a[href]').forEach((link) => {
-    const kind = linkKindForHref(link.getAttribute('href') ?? '')
-    const label = linkTypeLabel(kind)
-    link.dataset.linkKind = kind
-    link.title = label.title
-  })
-}
-
-function linkTypeLabel(kind: DeepLinkKind) {
-  if (kind === 'resource') return { title: 'Resource link' }
-  if (kind === 'canvas') return { title: 'Canvas link' }
-  if (kind === 'annotation') return { title: 'Annotation link' }
-  if (kind === 'comment') return { title: 'Discussion link' }
-  if (kind === 'llm-chat' || kind === 'discord-message') return { title: 'Chat link' }
-  if (kind === 'external') return { title: 'External link' }
-  return { title: 'Link' }
+function serializedEditorHtml(root: HTMLElement) {
+  const clone = root.cloneNode(true) as HTMLElement
+  clone.querySelectorAll('.note-link-marker').forEach((marker) => marker.remove())
+  clone.querySelectorAll('.heading-link').forEach((link) => link.remove())
+  return clone.innerHTML
 }
 
 function Resources({ canInteract }: { canInteract: boolean }) {
