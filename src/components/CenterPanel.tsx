@@ -1,5 +1,5 @@
 import { useEffect, useLayoutEffect, useRef, useState, type ClipboardEvent, type CSSProperties, type FormEvent, type KeyboardEvent, type MouseEvent, type RefObject } from 'react'
-import { Bold, ChevronDown, Code2, Eye, EyeClosed, File, FileText, Heading1, Heading2, Heading3, Italic, Link2, List, LogOut, MessageCircle, MoreVertical, Plus, Quote, Reply, Send, Settings, Trash2, Upload, Video, X } from 'lucide-react'
+import { Bold, ChevronDown, Code2, Eye, EyeClosed, EyeOff, File, FileText, Heading1, Heading2, Heading3, Italic, Link2, List, LogOut, MessageCircle, MoreVertical, Plus, Quote, Reply, Send, Settings, Trash2, Upload, Video, X } from 'lucide-react'
 import { canvases, comments, projects, resources, type Canvas, type Comment } from '../data'
 import { Avatar, CopyLinkButton, IconButton, TabButton } from './Primitives'
 import { useLocalStorage } from '../hooks/useLocalStorage'
@@ -34,8 +34,8 @@ export default function CenterPanel() {
   const [collaboration, setCollaboration] = useState<CollaborationSettings>(getCollaborationSettings)
   const [invitePermissions, setInvitePermissions] = useState({ canvas: true, resources: true, discussion: true, llm: true, chat: true })
   const [creatingInvite, setCreatingInvite] = useState(false)
-  const [storedAnnotationMode, setAnnotationMode] = useLocalStorage<'track' | 'hover' | 'hidden'>('fieldnotes:annotation-mode', 'track')
-  const annotationMode: 'track' | 'hidden' = storedAnnotationMode === 'hidden' ? 'hidden' : 'track'
+  const [storedAnnotationMode, setAnnotationMode] = useLocalStorage<'track' | 'compact' | 'hover' | 'hidden'>('fieldnotes:annotation-mode', 'track')
+  const annotationMode: 'track' | 'compact' | 'hidden' = storedAnnotationMode === 'hidden' ? 'hidden' : storedAnnotationMode === 'compact' || storedAnnotationMode === 'hover' ? 'compact' : 'track'
   const centerRef = useRef<HTMLElement>(null)
   const accountMenuRef = useRef<HTMLDivElement>(null)
   const pendingHeadingScroll = useRef<string | null>(null)
@@ -55,6 +55,12 @@ export default function CenterPanel() {
     ? (projects.find((project) => project.id === collaborationScope.id)?.title ?? collaborationScope.id)
     : (storedCanvases().find((canvas) => canvas.id === collaborationScope.id)?.title ?? activeCanvas.title)
   const dialogPurpose = collaborationDialog === 'invite' ? 'Create invite link' : collaborationDialog === 'view' ? 'My permissions' : 'Permissions'
+  const annotationToggleLabel = annotationMode === 'track' ? 'Compact annotations' : annotationMode === 'compact' ? 'Hide annotations' : 'Show annotations'
+  const annotationToggleTooltip = annotationMode === 'track'
+    ? 'Full annotations are visible. Click for compact pins.'
+    : annotationMode === 'compact'
+      ? 'Compact pins are on. Link icons are hidden. Click to hide annotations.'
+      : 'Annotations are hidden. Click to show full annotations.'
   const canvasSubtitle = activeCanvas.subtitle ?? 'Notes on interfaces that protect focus, invite curiosity, and help ideas find each other.'
   const scrollRoot = () => centerRef.current?.closest<HTMLElement>('.app-shell') ?? null
   const rememberCurrentTabScroll = () => {
@@ -285,11 +291,11 @@ export default function CenterPanel() {
       <button
         type="button"
         className="annotation-visibility-toggle icon-button ml-auto"
-        onClick={() => setAnnotationMode(annotationMode === 'track' ? 'hidden' : 'track')}
-        aria-label={annotationMode === 'track' ? 'Hide annotations' : 'Show annotations'}
-        title={annotationMode === 'track' ? 'Hide annotations' : 'Show annotations'}
+        onClick={() => setAnnotationMode(annotationMode === 'track' ? 'compact' : annotationMode === 'compact' ? 'hidden' : 'track')}
+        aria-label={annotationToggleLabel}
       >
-        {annotationMode === 'track' ? <Eye size={16} /> : <EyeClosed size={16} />}
+        {annotationMode === 'track' ? <Eye size={16} /> : annotationMode === 'compact' ? <EyeClosed size={16} /> : <EyeOff size={16} />}
+        <span className="annotation-toggle-tooltip" aria-hidden="true">{annotationToggleTooltip}</span>
       </button>
     </div>
     {tab === 'notes' ? <Notes key={activeCanvas.id} canvasId={activeCanvas.id} setSaved={setSaved} containerRef={centerRef} canInteract={canUseCanvas} canSaveResource={memberAccess.resources} annotationMode={annotationMode} onPendingHeadingScroll={(target) => { pendingHeadingScroll.current = target }} /> : <Resources canInteract={memberAccess.resources} />}
@@ -319,7 +325,7 @@ function PermissionSelect({ label, description, value, onChange }: { label: stri
   return <label className="permission-select"><span><strong>{label}</strong><small>{description}</small></span><select value={value} onChange={(event) => onChange(event.target.value as AccessMode)}><option value="public">Anyone can suggest</option><option value="login">Login required</option><option value="readonly">Admin + invite only</option></select></label>
 }
 
-function Notes({ canvasId, setSaved, containerRef, canInteract, canSaveResource, annotationMode, onPendingHeadingScroll }: { canvasId: string; setSaved: (value: boolean) => void; containerRef: RefObject<HTMLElement | null>; canInteract: boolean; canSaveResource: boolean; annotationMode: 'track' | 'hidden'; onPendingHeadingScroll: (target: string) => void }) {
+function Notes({ canvasId, setSaved, containerRef, canInteract, canSaveResource, annotationMode, onPendingHeadingScroll }: { canvasId: string; setSaved: (value: boolean) => void; containerRef: RefObject<HTMLElement | null>; canInteract: boolean; canSaveResource: boolean; annotationMode: 'track' | 'compact' | 'hidden'; onPendingHeadingScroll: (target: string) => void }) {
   const saveTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined)
   const editor = useRef<HTMLElement>(null)
   const [hasTextSelection, setHasTextSelection] = useState(false)
@@ -529,7 +535,7 @@ function Notes({ canvasId, setSaved, containerRef, canInteract, canSaveResource,
     document.addEventListener('selectionchange', updateSelectionState)
     return () => document.removeEventListener('selectionchange', updateSelectionState)
   })
-  return <div className={`note-wrap ${annotationMode === 'hidden' ? 'is-annotations-hidden' : ''}`}>
+  return <div className={`note-wrap ${annotationMode === 'compact' ? 'is-annotations-compact' : ''} ${annotationMode === 'hidden' ? 'is-annotations-hidden' : ''}`}>
     <div className="format-bar" aria-label="Markdown formatting" onMouseDown={(event) => event.preventDefault()}>
       <IconButton label="Heading 1" className={activeBlockTag === 'h1' ? 'is-active' : ''} aria-pressed={activeBlockTag === 'h1'} onClick={() => toggleBlock('h1')}><Heading1 size={16} /></IconButton><IconButton label="Heading 2" className={activeBlockTag === 'h2' ? 'is-active' : ''} aria-pressed={activeBlockTag === 'h2'} onClick={() => toggleBlock('h2')}><Heading2 size={16} /></IconButton><IconButton label="Heading 3" className={activeBlockTag === 'h3' ? 'is-active' : ''} aria-pressed={activeBlockTag === 'h3'} onClick={() => toggleBlock('h3')}><Heading3 size={16} /></IconButton><IconButton label="Bold" onClick={() => format('bold')}><Bold size={16} /></IconButton><IconButton label="Italic" onClick={() => format('italic')}><Italic size={16} /></IconButton><span className="divider"/><IconButton label="Link" onMouseDown={(event) => event.preventDefault()} onClick={addLink} disabled={!hasTextSelection}><Link2 size={16} /></IconButton><IconButton label="Bullet list" onClick={() => format('insertUnorderedList')}><List size={16} /></IconButton><IconButton label="Quote" onClick={() => toggleBlock('blockquote')}><Quote size={16} /></IconButton><IconButton label="Code" onClick={() => toggleBlock('pre')}><Code2 size={16} /></IconButton><div className="format-spacer"/><span className="markdown-label">Markdown</span>
     </div>

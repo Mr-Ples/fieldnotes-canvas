@@ -7,7 +7,7 @@ import { showConfirm, showToast } from './Popups'
 import { seedAnnotations, type AnnotationThread } from '../data/annotations'
 type Position = { id: string; top: number; compact: boolean; anchorTop: number; anchorBottom: number; anchorRight: number; anchorLeft: number; anchorWidth: number }
 
-export default function AnnotationLayer({ editorRef, containerRef, canvasId, canInteract, canSaveResource, mode, onDocumentChange }: { editorRef: RefObject<HTMLElement | null>; containerRef: RefObject<HTMLElement | null>; canvasId: string; canInteract: boolean; canSaveResource: boolean; mode: 'track' | 'hidden'; onDocumentChange: () => void }) {
+export default function AnnotationLayer({ editorRef, containerRef, canvasId, canInteract, canSaveResource, mode, onDocumentChange }: { editorRef: RefObject<HTMLElement | null>; containerRef: RefObject<HTMLElement | null>; canvasId: string; canInteract: boolean; canSaveResource: boolean; mode: 'track' | 'compact' | 'hidden'; onDocumentChange: () => void }) {
   const [items, setItems] = useLocalStorage<AnnotationThread[]>('fieldnotes:annotations', seedAnnotations)
   const [selection, setSelection] = useState<{ range: Range; quote: string; rect: DOMRect } | null>(null)
   const [composing, setComposing] = useState(false)
@@ -64,7 +64,7 @@ export default function AnnotationLayer({ editorRef, containerRef, canvasId, can
       const rect = anchor.getBoundingClientRect()
       const anchorTop = rect.top - containerRect.top + container.scrollTop
       const rightPanelOpen = !container.closest('.app-shell')?.classList.contains('right-collapsed')
-      const compact = mobile || (rightPanelOpen && containerRect.right - editorRect.right < 310)
+      const compact = mode === 'compact' || mobile || (rightPanelOpen && containerRect.right - editorRect.right < 310)
       return [{
         id: item.id,
         top: compact ? Math.max(0, anchorTop - 10) : Math.max(0, anchorTop - 12),
@@ -132,7 +132,7 @@ export default function AnnotationLayer({ editorRef, containerRef, canvasId, can
       arranged[index].top = Math.max(arranged[index].top, arranged[index - 1].top + heightFor(arranged[index - 1].id) + 14)
     }
     setPositions(arranged)
-  }, [active, activeOrigin, containerRef, editorRef, items])
+  }, [active, activeOrigin, containerRef, editorRef, items, mode])
 
   useLayoutEffect(() => { locateRef.current = locate }, [locate])
   useEffect(() => { itemsRef.current = items }, [items])

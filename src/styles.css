@@ -26,7 +26,7 @@
 
 @layer components {
   .app-shell { --canvas-scroll-offset: 101px; @apply relative mx-auto grid h-dvh max-w-[1920px] items-start overflow-y-auto overflow-x-hidden bg-paper; grid-template-columns: var(--left-panel-width, 340px) minmax(0, 1fr) var(--right-panel-width, 360px); scroll-padding-top: var(--canvas-scroll-offset); }
-  .side-panel { @apply sticky top-0 z-30 h-dvh min-w-0 overflow-visible bg-warm; }
+  .side-panel { @apply sticky top-0 z-30 h-dvh min-w-0 overflow-visible bg-warm; overflow-anchor: none; }
   .side-panel-inner { @apply flex h-full min-w-0 flex-col overflow-hidden; }
   .left-panel { @apply border-r border-rule; grid-column: 1; }
   .right-panel { @apply border-l border-rule; grid-column: 3; }
@@ -74,6 +74,10 @@
   .icon-button { @apply grid size-8 cursor-pointer place-items-center rounded-lg border-0 bg-transparent p-0 text-stone-500 hover:bg-ink/7 hover:text-ink; }
   .icon-button.is-active { @apply bg-sage text-forest ring-1 ring-inset ring-emerald-900/20; }
   .icon-button:disabled { @apply cursor-not-allowed text-stone-300 hover:bg-transparent hover:text-stone-300; }
+  .annotation-visibility-toggle { @apply relative; }
+  .annotation-toggle-tooltip { @apply pointer-events-none absolute right-0 bottom-[calc(100%+10px)] z-50 w-56 rounded-lg border border-stone-200 bg-ink px-3 py-2 text-left text-[10px] leading-snug text-white opacity-0 shadow-xl transition-all duration-150; transform: translateY(4px) scale(.98); }
+  .annotation-toggle-tooltip::after { content: ''; @apply absolute right-3 -bottom-1 size-2 rotate-45 bg-ink; }
+  .annotation-visibility-toggle:hover .annotation-toggle-tooltip, .annotation-visibility-toggle:focus-visible .annotation-toggle-tooltip { @apply opacity-100; transform: translateY(0) scale(1); }
   .panel-tabs { @apply flex h-[51px] shrink-0 items-end gap-5 border-b border-rule px-[18px]; }
   .panel-title { @apply flex h-[42px] items-center text-[13px] font-semibold text-forest; }
   .tab-button { @apply relative inline-flex h-[42px] cursor-pointer items-center gap-1.5 border-0 bg-transparent px-px text-[13px] font-semibold whitespace-nowrap text-stone-500 after:absolute after:inset-x-0 after:-bottom-px after:h-0.5 after:rounded-full after:bg-transparent; }
@@ -180,7 +184,7 @@
   .tag-add { @apply grid size-6 cursor-pointer place-items-center rounded-full border border-stone-300 bg-transparent text-stone-500 hover:bg-stone-100 hover:text-ink; }
   .content-tabs { @apply sticky top-0 z-20 mx-auto flex h-[47px] w-[min(760px,calc(100%_-_72px))] items-end gap-6 border-b border-rule bg-paper/95 backdrop-blur-lg; }
   .note-wrap, .resources-view, .discussion-view { @apply mx-auto w-[min(760px,calc(100%_-_72px))]; }
-  .format-bar { @apply sticky top-[47px] z-10 flex h-[42px] items-center gap-px border-b border-stone-200 bg-paper/95 backdrop-blur-lg; }
+  .format-bar { @apply sticky top-[47px] z-30 flex h-[42px] items-center gap-px border-b border-stone-200 bg-paper/95 backdrop-blur-lg; }
   .format-bar .icon-button { @apply h-7 w-[30px]; }
   .divider { @apply mx-1.5 h-4 w-px bg-rule; }
   .format-spacer { @apply flex-1; }
@@ -197,9 +201,9 @@
   .note-editor p { @apply mt-0 mb-4; }
   .note-editor a { @apply relative cursor-pointer font-semibold text-emerald-800 underline decoration-emerald-700/45 decoration-2 underline-offset-4; }
   .note-editor a:hover, .note-editor a:focus { @apply text-forest decoration-forest; }
-  .note-editor a .note-link-marker { @apply pointer-events-none absolute right-0 bottom-[1.08em] z-10 inline-flex translate-x-[80%] text-emerald-700 opacity-70 transition-opacity duration-150; }
+  .note-editor a .note-link-marker { @apply pointer-events-none absolute right-0 bottom-[1.08em] z-[1] inline-flex translate-x-[80%] text-emerald-700 opacity-70 transition-opacity duration-150; }
   .note-editor a .note-link-marker svg { @apply block size-[12px]; }
-  .note-wrap.is-annotations-hidden .note-editor a .note-link-marker { @apply opacity-0; }
+  .note-wrap.is-annotations-compact .note-editor a .note-link-marker, .note-wrap.is-annotations-compact .note-editor a:hover .note-link-marker, .note-wrap.is-annotations-compact .note-editor a:focus-visible .note-link-marker, .note-wrap.is-annotations-hidden .note-editor a .note-link-marker { @apply opacity-0; }
   .note-wrap.is-annotations-hidden .note-editor a:hover .note-link-marker, .note-wrap.is-annotations-hidden .note-editor a:focus-visible .note-link-marker { @apply opacity-70; }
   .note-editor strong, .note-editor b { @apply font-bold text-ink; }
   .link-preview-card { @apply fixed z-[1200] max-h-[min(430px,calc(100dvh-24px))] w-[min(352px,calc(100vw-24px))] overflow-y-auto overflow-x-hidden rounded-xl border border-stone-200 bg-white/95 p-3 text-left shadow-2xl backdrop-blur-sm; user-select: text; }
