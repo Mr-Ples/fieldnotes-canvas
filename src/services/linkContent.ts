@@ -60,7 +60,7 @@ export function resolveLinkPreview(href: string): LinkPreview | null {
   }
   const target = kind === 'external' ? '' : deepLinkTarget(url.hash || href)
   if (kind === 'external') {
-    return null
+    return { kind, href: url.toString(), title: url.toString() }
   }
   if (kind === 'canvas') {
     const canvasId = target.replace(/^canvas-/, '')

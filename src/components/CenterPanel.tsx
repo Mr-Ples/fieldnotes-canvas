@@ -88,7 +88,7 @@ export default function CenterPanel() {
       const kind = deepLinkKind(target)
       const linkedCanvasId = url.searchParams.get('canvas')
       const activeId = (JSON.parse(localStorage.getItem('fieldnotes:active-canvas') ?? JSON.stringify(activeCanvas)) as Canvas).id
-      if (target && linkedCanvasId && linkedCanvasId !== activeId) {
+      if (kind !== 'canvas' && target && linkedCanvasId && linkedCanvasId !== activeId) {
         const canvas = storedCanvases().find((item) => item.id === linkedCanvasId)
         if (!canvas) return
         pendingHeadingScroll.current = target
@@ -104,6 +104,10 @@ export default function CenterPanel() {
       } else if (kind === 'canvas') {
         const canvas = storedCanvases().find((item) => item.id === target.replace(/^canvas-/, ''))
         if (!canvas) return
+        if (url.searchParams.has('canvas')) {
+          url.searchParams.delete('canvas')
+          window.history.replaceState(null, '', url.pathname + url.search + url.hash)
+        }
         openTab('notes')
         setActiveCanvas(canvas)
         localStorage.setItem('fieldnotes:active-canvas', JSON.stringify(canvas))
@@ -299,6 +303,16 @@ function Notes({ canvasId, setSaved, containerRef, canInteract, canSaveResource,
     if (saved && editor.current) editor.current.innerHTML = saved
     decorateEditorLinks(editor.current)
   }, [canvasId])
+  useEffect(() => {
+    const current = editor.current
+    if (!current) return
+    const mutated = () => {
+      decorateEditorLinks(current)
+      persistEditor()
+    }
+    current.addEventListener('fieldnotes:note-html-mutated', mutated)
+    return () => current.removeEventListener('fieldnotes:note-html-mutated', mutated)
+  })
   const change = (event: FormEvent<HTMLElement>) => {
     decorateEditorLinks(event.currentTarget)
     setSaved(false)

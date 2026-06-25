@@ -1,5 +1,6 @@
 import { createPortal } from 'react-dom'
 import { useEffect, useLayoutEffect, useRef, useState, type RefObject } from 'react'
+import { Unlink } from 'lucide-react'
 import { linkLabel, resolveLinkPreview } from '../services/linkContent'
 
 type PreviewState = {
@@ -14,6 +15,7 @@ export default function LinkPreviewLayer({ rootRef }: { rootRef: RefObject<HTMLE
   const hoverTimer = useRef<number | null>(null)
   const hoverHref = useRef('')
   const cardRef = useRef<HTMLDivElement>(null)
+  const linkRef = useRef<HTMLAnchorElement | null>(null)
   const overCard = useRef(false)
 
   const clear = () => {
@@ -22,6 +24,7 @@ export default function LinkPreviewLayer({ rootRef }: { rootRef: RefObject<HTMLE
       hoverTimer.current = null
     }
     hoverHref.current = ''
+    linkRef.current = null
     overCard.current = false
     setPreview(null)
   }
@@ -37,6 +40,7 @@ export default function LinkPreviewLayer({ rootRef }: { rootRef: RefObject<HTMLE
     if (!next) return
     if (hoverTimer.current) window.clearTimeout(hoverTimer.current)
     hoverHref.current = link.href
+    linkRef.current = link
     const show = () => {
       if (hoverHref.current !== link.href) return
       const anchor = link.getBoundingClientRect()
@@ -46,6 +50,16 @@ export default function LinkPreviewLayer({ rootRef }: { rootRef: RefObject<HTMLE
     }
     if (delay) hoverTimer.current = window.setTimeout(show, 300)
     else show()
+  }
+
+  const unlink = () => {
+    const link = linkRef.current
+    const root = rootRef.current
+    if (!link || !root?.contains(link)) return
+    const text = document.createTextNode(link.textContent ?? '')
+    link.replaceWith(text)
+    root.dispatchEvent(new CustomEvent('fieldnotes:note-html-mutated', { bubbles: true }))
+    clear()
   }
 
   useLayoutEffect(() => {
@@ -146,6 +160,7 @@ export default function LinkPreviewLayer({ rootRef }: { rootRef: RefObject<HTMLE
       <div className="link-preview-head">
         {preview.author ? <div className="link-preview-author">{preview.author.avatar ? <img src={preview.author.avatar} alt="" /> : <span>{preview.author.initials}</span>}<strong>{preview.author.name}</strong></div> : <strong>{preview.title}</strong>}
         <span>{linkLabel(preview.kind)}</span>
+        <button type="button" className="link-preview-unlink" onClick={unlink} aria-label="Unlink"><Unlink size={13} /></button>
       </div>
       {preview.author && !repeatsAuthor && <h4>{preview.title}</h4>}
       {preview.subtitle && <p className="link-preview-subtitle">{preview.subtitle}</p>}

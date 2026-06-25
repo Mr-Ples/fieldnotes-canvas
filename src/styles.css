@@ -186,6 +186,7 @@
   .link-preview-head { @apply flex items-start justify-between gap-3; }
   .link-preview-head strong { @apply block min-w-0 flex-1 truncate text-[12px] font-semibold text-ink; }
   .link-preview-head span { @apply shrink-0 text-[8px] font-bold uppercase tracking-wider text-emerald-700; }
+  .link-preview-unlink { @apply -mt-1 -mr-1 grid size-6 shrink-0 cursor-pointer place-items-center rounded-md border-0 bg-transparent text-stone-400 hover:bg-stone-100 hover:text-red-700; }
   .link-preview-author { @apply flex min-w-0 flex-1 items-center gap-2; }
   .link-preview-author img, .link-preview-author > span { @apply grid size-7 shrink-0 place-items-center rounded-full bg-indigo-100 object-cover text-[8px] font-bold text-indigo-700; }
   .link-preview-card h4 { @apply my-2 font-serif text-[13px] leading-tight font-semibold text-ink; }
