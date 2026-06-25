@@ -38,6 +38,8 @@ export default function AnnotationLayer({ editorRef, containerRef, canvasId, can
   const stableTops = useRef(new Map<string, number>())
   const cardHeights = useRef(new Map<string, number>())
   const positionsRef = useRef<Position[]>([])
+  const hoverTimer = useRef<number | null>(null)
+  const hoverTimerId = useRef<string | null>(null)
 
   useEffect(() => {
     void fetch('/api/discord/me').then((response) => response.ok ? response.json() : null).then((result: { user?: { id: string; displayName: string; avatar?: string } } | null) => setIdentity(result?.user ?? null)).catch(() => { })
@@ -142,6 +144,26 @@ export default function AnnotationLayer({ editorRef, containerRef, canvasId, can
   useLayoutEffect(() => { locateRef.current = locate }, [locate])
   useEffect(() => { itemsRef.current = items }, [items])
   useEffect(() => { positionsRef.current = positions }, [positions])
+  const activateAnnotation = useCallback((id: string, delayed: boolean) => {
+    if (hoverTimer.current) {
+      if (delayed && hoverTimerId.current === id) return
+      window.clearTimeout(hoverTimer.current)
+      hoverTimer.current = null
+      hoverTimerId.current = null
+    }
+    if (delayed) {
+      hoverTimer.current = window.setTimeout(() => {
+        setActiveOrigin('anchor')
+        setActive(id)
+        hoverTimer.current = null
+        hoverTimerId.current = null
+      }, 300)
+      hoverTimerId.current = id
+      return
+    }
+    setActiveOrigin('anchor')
+    setActive(id)
+  }, [])
   useLayoutEffect(() => {
     if (!active || !annotationTabOpen || activeOrigin !== 'anchor') return
     const frame = requestAnimationFrame(() => {
@@ -264,19 +286,29 @@ export default function AnnotationLayer({ editorRef, containerRef, canvasId, can
     if (!editor) return
     const over = (event: Event) => {
       const id = (event.target as Element).closest<HTMLElement>('[data-annotation-id]')?.dataset.annotationId
-      if (id) { setActiveOrigin('anchor'); setActive(id) }
+      if (id) activateAnnotation(id, true)
     }
     const move = (event: PointerEvent) => {
       const id = (event.target as Element).closest<HTMLElement>('[data-annotation-id]')?.dataset.annotationId
-      if (id) { setActiveOrigin('anchor'); setActive(id) }
+      if (id) activateAnnotation(id, true)
+    }
+    const focus = (event: Event) => {
+      const id = (event.target as Element).closest<HTMLElement>('[data-annotation-id]')?.dataset.annotationId
+      if (id) activateAnnotation(id, false)
     }
     const click = (event: Event) => {
       const id = (event.target as Element).closest<HTMLElement>('[data-annotation-id]')?.dataset.annotationId
-      if (id) { setActiveOrigin('anchor'); setActive(id); window.dispatchEvent(new CustomEvent('fieldnotes:open-annotations', { detail: { id } })) }
+      if (id) { activateAnnotation(id, false); window.dispatchEvent(new CustomEvent('fieldnotes:open-annotations', { detail: { id } })) }
     }
-    editor.addEventListener('mouseover', over); editor.addEventListener('pointermove', move); editor.addEventListener('focusin', over); editor.addEventListener('click', click)
-    return () => { editor.removeEventListener('mouseover', over); editor.removeEventListener('pointermove', move); editor.removeEventListener('focusin', over); editor.removeEventListener('click', click) }
-  }, [annotationTabOpen, editorRef])
+    const cancelHover = () => {
+      if (!hoverTimer.current) return
+      window.clearTimeout(hoverTimer.current)
+      hoverTimer.current = null
+      hoverTimerId.current = null
+    }
+    editor.addEventListener('mouseover', over); editor.addEventListener('pointermove', move); editor.addEventListener('mouseout', cancelHover); editor.addEventListener('focusin', focus); editor.addEventListener('click', click)
+    return () => { cancelHover(); editor.removeEventListener('mouseover', over); editor.removeEventListener('pointermove', move); editor.removeEventListener('mouseout', cancelHover); editor.removeEventListener('focusin', focus); editor.removeEventListener('click', click) }
+  }, [activateAnnotation, editorRef])
 
   useEffect(() => {
     const close = (event: PointerEvent) => {

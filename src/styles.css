@@ -237,7 +237,7 @@
   .annotation-thread.is-compact { @apply z-[80]; transform: translateY(-20%); }
   .annotation-thread.is-compact .annotation-card { @apply pointer-events-none opacity-0; }
   .annotation-thread.is-compact.is-active .annotation-card, .annotation-thread.is-compact:focus-within .annotation-card, .annotation-thread.is-compact:hover .annotation-card { @apply pointer-events-auto opacity-100; }
-  .annotation-thread.is-over-text .annotation-card { @apply bg-white/95 backdrop-blur-sm; }
+  .annotation-thread.is-over-text .annotation-card { @apply bg-white; }
   .annotation-meta { @apply flex items-center gap-2; } .annotation-meta > div { @apply flex-1; }
   .annotation-meta > .annotation-menu { @apply relative flex-none; }
   .annotation-menu > button { @apply grid size-7 cursor-pointer place-items-center rounded-md border-0 bg-transparent text-stone-400 hover:bg-stone-100 hover:text-ink; }
