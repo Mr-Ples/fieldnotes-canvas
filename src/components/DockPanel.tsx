@@ -1,5 +1,5 @@
-import { useRef, useState, type DragEvent, type ReactNode } from 'react'
-import { Files, GripVertical, MessageSquare, MessageSquareText, MessagesSquare } from 'lucide-react'
+import { useLayoutEffect, useRef, useState, type DragEvent, type ReactNode } from 'react'
+import { Files, MessageSquare, MessageSquareText, MessagesSquare } from 'lucide-react'
 
 export type DockTabId = 'canvases' | 'chat' | 'discord' | 'annotations'
 export type DockLocation = 'left' | 'right' | 'margin'
@@ -13,6 +13,16 @@ function TabIcon({ id }: { id: DockTabId }) {
 export function DockTabs({ tabs, active, location, annotationCount, draggingTab, onDragChange, onActivate, onDropTab }: { tabs: DockTabId[]; active: DockTabId | null; location: DockLocation; annotationCount: number; draggingTab: DockTabId | null; onDragChange: (tab: DockTabId | null) => void; onActivate: (tab: DockTabId) => void; onDropTab: (tab: DockTabId, location: DockLocation, index: number) => void }) {
   const tabsRef = useRef<HTMLDivElement>(null)
   const [dropTarget, setDropTarget] = useState<{ index: number; x: number } | null>(null)
+  const [iconOnly, setIconOnly] = useState(false)
+  useLayoutEffect(() => {
+    const container = tabsRef.current
+    if (!container) return
+    const update = () => setIconOnly(container.clientWidth < tabs.length * 96)
+    update()
+    const observer = new ResizeObserver(update)
+    observer.observe(container)
+    return () => observer.disconnect()
+  }, [tabs.length])
   const drop = (event: DragEvent, index: number) => {
     event.preventDefault()
     const id = event.dataTransfer.getData('application/x-fieldnotes-tab') as DockTabId
@@ -32,9 +42,9 @@ export function DockTabs({ tabs, active, location, annotationCount, draggingTab,
     if (before >= 0) targetAt(before, buttons[before].getBoundingClientRect().left)
     else targetAt(buttons.length, buttons.at(-1)?.getBoundingClientRect().right ?? clientX)
   }
-  return <div ref={tabsRef} className="panel-tabs dock-tabs" role="tablist" onDragOver={(event) => { if (!draggingTab) return; event.preventDefault(); targetFromPointer(event.clientX) }} onDragLeave={(event) => { if (!event.currentTarget.contains(event.relatedTarget as Node)) setDropTarget(null) }} onDrop={(event) => drop(event, dropTarget?.index ?? tabs.length)}>
+  return <div ref={tabsRef} className={`panel-tabs dock-tabs ${iconOnly ? 'is-icon-only' : ''}`} role="tablist" onDragOver={(event) => { if (!draggingTab) return; event.preventDefault(); targetFromPointer(event.clientX) }} onDragLeave={(event) => { if (!event.currentTarget.contains(event.relatedTarget as Node)) setDropTarget(null) }} onDrop={(event) => drop(event, dropTarget?.index ?? tabs.length)}>
     {tabs.map((id, index) => <button key={id} role="tab" aria-selected={active === id} className={`tab-button dock-tab ${active === id ? 'is-active' : ''}`} draggable onDragStart={(event) => { onDragChange(id); event.dataTransfer.effectAllowed = 'move'; event.dataTransfer.setData('application/x-fieldnotes-tab', id) }} onDragEnd={() => { onDragChange(null); setDropTarget(null) }} onDragOver={(event) => { if (!draggingTab) return; event.preventDefault(); targetFromPointer(event.clientX) }} onDrop={(event) => { event.stopPropagation(); drop(event, dropTarget?.index ?? index) }} onClick={() => onActivate(id)}>
-      <GripVertical className="dock-grip" size={12}/><TabIcon id={id}/>{labels[id]}{id === 'annotations' && annotationCount > 0 && <span className="count">{annotationCount}</span>}
+      <TabIcon id={id}/><span className="dock-tab-label">{labels[id]}</span>{id === 'annotations' && annotationCount > 0 && <span className="count">{annotationCount}</span>}
     </button>)}
     {dropTarget && <i className="dock-drop-marker" style={{ left: dropTarget.x }} aria-hidden="true"/>}
   </div>

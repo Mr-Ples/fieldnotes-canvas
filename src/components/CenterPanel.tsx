@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, type CSSProperties, type FormEvent, type KeyboardEvent, type RefObject } from 'react'
-import { Bold, ChevronDown, Code2, Eye, EyeClosed, File, FileText, Heading2, Italic, Link2, List, LogOut, MessageCircle, MoreHorizontal, Plus, Quote, Reply, Send, Settings, Trash2, Upload, Video, X } from 'lucide-react'
+import { Bold, ChevronDown, Code2, Eye, EyeClosed, File, FileText, Heading2, Italic, Link2, List, LogOut, MessageCircle, MoreVertical, Plus, Quote, Reply, Send, Settings, Trash2, Upload, Video, X } from 'lucide-react'
 import { canvases, comments, projects, resources, type Canvas, type Comment } from '../data'
 import { Avatar, CopyLinkButton, IconButton, TabButton } from './Primitives'
 import { useLocalStorage } from '../hooks/useLocalStorage'
@@ -148,7 +148,7 @@ export default function CenterPanel() {
   }, [])
 
   return <main ref={centerRef} className="center-panel" id="top">
-    <div className="canvas-account-control"><div className="account-actions" ref={accountMenuRef}><DiscordIdentity compact onChange={setIdentity}/>{(identity || canModerate) && <IconButton label="Account and canvas options" onClick={() => setAccountMenu((open) => !open)}><MoreHorizontal size={18} /></IconButton>}{accountMenu && <div className="account-menu">
+    <div className="canvas-account-control"><div className="account-actions" ref={accountMenuRef}><DiscordIdentity compact onChange={setIdentity}/>{(identity || canModerate) && <IconButton label="Account and canvas options" onClick={() => setAccountMenu((open) => !open)}><MoreVertical size={18} /></IconButton>}{accountMenu && <div className="account-menu">
         {canModerate && <button onClick={() => { setCollaborationScope({ type: 'canvas', id: activeCanvas.id }); setCollaborationDialog('invite'); setAccountMenu(false) }}><Link2 size={14}/> Create invite link</button>}
         {canModerate && <button onClick={() => { setCollaborationScope({ type: 'canvas', id: activeCanvas.id }); setCollaboration(getCollaborationSettings()); setCollaborationDialog('settings'); setAccountMenu(false) }}><Settings size={14}/> Permissions</button>}
         {!canModerate && <button onClick={() => { setCollaborationScope({ type: 'canvas', id: activeCanvas.id }); setCollaborationDialog('view'); setAccountMenu(false) }}><Settings size={14}/> My permissions</button>}
@@ -334,7 +334,7 @@ function Resources({ canInteract }: { canInteract: boolean }) {
       {added.map((resource) => <article className="resource-card deep-link-target" id={resource.id} key={resource.id}>
         <div className="resource-thumb" style={{ '--resource-accent': resource.accent } as CSSProperties}>{resource.kind === 'video' ? <Video /> : resource.kind === 'pdf' ? <FileText /> : resource.kind === 'chat' ? <MessageCircle /> : <File />}</div>
         <div className="resource-info"><span className="resource-kind">{resource.kind}</span><h3>{resource.title}</h3><p>{resource.meta}</p>{resource.url && <a className="mt-1 inline-flex text-[9px] text-emerald-800 underline" href={resource.url} target="_blank" rel="noreferrer">Open source</a>}{resource.content && <details className="mt-2 text-[10px]"><summary className="cursor-pointer text-emerald-800">Read extracted text</summary><div className="mt-2 max-h-72 overflow-auto whitespace-pre-wrap rounded-lg bg-stone-100 p-3 font-serif text-xs leading-relaxed">{resource.content}</div></details>}</div>
-        <div className="resource-actions"><CopyLinkButton target={resource.id} /><IconButton label="Resource options"><MoreHorizontal size={18}/></IconButton></div>
+        <div className="resource-actions"><CopyLinkButton target={resource.id} /><IconButton label="Resource options"><MoreVertical size={18}/></IconButton></div>
       </article>)}
     </section>
   </div>

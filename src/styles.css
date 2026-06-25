@@ -39,7 +39,10 @@
   .dock-tabs::-webkit-scrollbar { display: none; }
   .dock-tab { @apply shrink-0 cursor-grab; }
   .dock-tab:active { @apply cursor-grabbing; }
-  .dock-grip { @apply -mr-1 text-stone-300; }
+  .dock-tabs.is-icon-only { @apply gap-2; }
+  .dock-tabs.is-icon-only .dock-tab { @apply size-[42px] justify-center px-0; }
+  .dock-tabs.is-icon-only .dock-tab-label { @apply sr-only; }
+  .dock-tabs.is-icon-only .count { @apply absolute top-1 right-0 h-3.5 min-w-3.5 px-1 text-[8px]; }
   .dock-drop-marker { @apply pointer-events-none absolute bottom-1.5 z-10 h-8 w-0.5 -translate-x-1/2 rounded-full bg-emerald-700 shadow-[0_0_0_2px_#f4f1ea]; }
   .canvas-margin-dock { @apply fixed inset-y-0 left-0 z-20 hidden min-w-0 flex-col overflow-hidden bg-transparent; width: calc(max(0px, (100vw - 1920px) / 2) + max(36px, (min(1920px, 100vw) - var(--effective-right-panel-width, 0px) - 760px) / 2)); }
   .app-shell.margin-open .canvas-margin-dock { @apply flex; }
@@ -77,9 +80,11 @@
   .search-box { @apply mx-3.5 mt-4 mb-2.5 flex h-[37px] items-center gap-2 rounded-lg border border-rule bg-white/50 px-2.5 text-stone-400; }
   .search-box input { @apply min-w-0 flex-1 border-0 bg-transparent text-[13px] text-ink outline-0; }
   .search-box kbd { @apply rounded border border-stone-300 px-1 py-0.5 font-sans text-[10px] text-stone-400; }
-  .new-canvas { @apply mx-3.5 mb-3 flex h-[39px] cursor-pointer items-center justify-between rounded-lg border border-emerald-900/25 bg-sage px-2.5 text-[13px] font-semibold text-forest; }
+  .directory-create-row { @apply mx-3.5 mb-3 flex items-center gap-2; }
+  .new-canvas { @apply flex h-[39px] flex-1 cursor-pointer items-center justify-between rounded-lg border border-emerald-900/25 bg-sage px-2.5 text-[13px] font-semibold text-forest; }
   .new-canvas > span:first-child { @apply flex items-center gap-2; }
   .new-canvas-shortcut { @apply text-[10px] opacity-55; }
+  .new-project { @apply grid size-[39px] shrink-0 cursor-pointer place-items-center rounded-lg border border-rule bg-white/60 text-stone-500 hover:bg-stone-100 hover:text-forest; }
   .canvas-directory { @apply flex min-h-0 flex-1 flex-col; }
   .canvas-list { @apply min-h-0 flex-1 overflow-y-auto pb-4; }
   .canvas-group-wrap { @apply px-2; }
@@ -91,7 +96,11 @@
   .directory-actions { @apply flex items-center gap-0.5; }
   .canvas-row > .directory-actions { @apply absolute top-1.5 right-1 opacity-0; }
   .canvas-row:hover > .directory-actions, .canvas-row:focus-within > .directory-actions { @apply opacity-100; }
-  .directory-actions button { @apply grid size-7 place-items-center rounded-md border-0 bg-transparent p-0 text-stone-400 hover:bg-stone-200 hover:text-forest; }
+  .directory-menu { @apply relative; }
+  .directory-menu-trigger { @apply grid size-7 place-items-center rounded-md border-0 bg-transparent p-0 text-stone-400 hover:bg-stone-200 hover:text-forest; }
+  .directory-menu-popover { @apply absolute top-7 right-0 z-50 w-40 rounded-lg border border-stone-200 bg-white p-1 normal-case tracking-normal shadow-xl; }
+  .directory-menu-popover button { @apply flex h-auto w-full cursor-pointer items-center gap-1.5 rounded-md border-0 bg-transparent px-2 py-1.5 text-left text-[9px] font-semibold text-stone-600 hover:bg-stone-100; }
+  .directory-menu-popover button.danger { @apply text-red-700; }
   .canvas-item { @apply flex h-10 min-w-0 items-center gap-2 rounded-lg px-2.5 text-[13px] text-stone-600 no-underline hover:bg-ink/5; }
   .canvas-item.is-current { @apply bg-[#e3e7df] font-semibold text-forest; }
   .canvas-symbol { @apply w-[19px] text-center text-[15px] text-stone-500; }
@@ -104,13 +113,17 @@
   .canvas-directory.is-margin .canvas-list { @apply px-3 pt-0; }
   .canvas-directory.is-margin .canvas-item { @apply h-auto bg-transparent! px-2 py-1.5 text-xs underline-offset-2 hover:underline; }
   .canvas-directory.is-margin .canvas-item.is-current { @apply font-bold text-forest; }
-  .canvas-directory.is-margin .canvas-symbol, .canvas-directory.is-margin .canvas-item time, .canvas-directory.is-margin .canvas-row > .directory-actions { @apply hidden; }
-  .canvas-directory.is-margin .group-label > .directory-actions { @apply flex; }
+  .canvas-directory.is-margin .canvas-symbol, .canvas-directory.is-margin .canvas-item time { @apply hidden; }
+  .canvas-directory.is-margin .canvas-row > .directory-actions { @apply top-0 right-0; }
+  .canvas-directory.is-margin .group-label > .directory-actions { @apply flex opacity-100; }
   .canvas-directory.is-margin .group-label { @apply px-2 pt-4 pb-1; }
   .canvas-directory.is-margin .document-outline a { @apply bg-transparent hover:bg-transparent hover:underline; }
+  .canvas-directory.is-margin .document-outline a.is-active { @apply bg-sage text-forest no-underline; }
+  .canvas-directory.is-margin .search-box .directory-menu-trigger { @apply text-stone-500 hover:bg-stone-100 hover:text-forest; }
   .document-outline { @apply mx-3 mt-5 flex flex-col border-t border-rule pt-4; }
   .document-outline > span { @apply mb-2 text-[9px] font-bold tracking-widest text-stone-400 uppercase; }
   .document-outline a { @apply rounded-md px-2 py-1.5 text-[11px] font-semibold text-stone-600 no-underline hover:bg-stone-100 hover:text-forest; }
+  .document-outline a.is-active { @apply bg-sage font-bold text-forest; }
   .document-outline a.outline-level-3 { @apply pl-5 font-medium text-stone-500; }
   .chat-panel { @apply flex min-h-0 flex-1 flex-col p-3.5; }
   .chat-heading { @apply flex items-center justify-between; }
@@ -206,6 +219,7 @@
   .comment .comment { @apply mt-2 border-t border-stone-200 pt-2; }
   .annotation-ui { @apply pointer-events-none absolute inset-0 z-50; }
   .annotation-thread-layer { @apply pointer-events-none absolute inset-0; }
+  .annotation-compact-layer { @apply pointer-events-none absolute inset-0 z-[1000]; }
   .annotation-add { @apply pointer-events-auto absolute z-50 flex -translate-y-1/2 cursor-pointer items-center gap-1.5 rounded-md border border-emerald-900/20 bg-forest px-3 py-2 text-[10px] font-semibold whitespace-nowrap text-white shadow-lg; }
   .annotation-composer { @apply pointer-events-auto absolute z-50 w-[292px] rounded-xl border border-stone-300 bg-white p-3 shadow-2xl; }
   .annotation-composer-head { @apply flex items-center justify-between text-[11px] font-semibold; }
@@ -220,6 +234,7 @@
   .annotation-card { @apply pointer-events-auto w-[292px] rounded-[10px] border border-stone-300 bg-white p-3 shadow-lg; }
   .annotation-thread.is-active { @apply pointer-events-auto z-40; }
   .annotation-thread.is-active .annotation-card { @apply border-emerald-800 ring-2 ring-emerald-800/25 shadow-2xl; }
+  .annotation-thread.is-compact { @apply z-[80]; transform: translateY(-20%); }
   .annotation-thread.is-compact .annotation-card { @apply pointer-events-none opacity-0; }
   .annotation-thread.is-compact.is-active .annotation-card, .annotation-thread.is-compact:focus-within .annotation-card, .annotation-thread.is-compact:hover .annotation-card { @apply pointer-events-auto opacity-100; }
   .annotation-thread.is-over-text .annotation-card { @apply bg-white/95 backdrop-blur-sm; }
@@ -303,7 +318,7 @@
   .resizing-panels { @apply cursor-col-resize select-none; }
   .app-shell, .canvas-list, .messages, .docked-annotations { scrollbar-width: thin; scrollbar-color: rgb(120 113 108 / .42) transparent; scrollbar-gutter: stable; }
   .app-shell::-webkit-scrollbar, .canvas-list::-webkit-scrollbar, .messages::-webkit-scrollbar, .docked-annotations::-webkit-scrollbar { width: 5px; height: 5px; }
-  .app-shell::-webkit-scrollbar-track, .canvas-list::-webkit-scrollbar-track, .messages::-webkit-scrollbar-track, .docked-annotations::-webkit-scrollbar-track { background: transparent; }
+  .app-shell::-webkit-scrollbar-track, .canvas-list::-webkit-scrollbar-track, .messages::-webkit-scrollbar-track, .docked-annotations::-webkit-scrollbar-track, .app-shell::-webkit-scrollbar-track-piece, .canvas-list::-webkit-scrollbar-track-piece, .messages::-webkit-scrollbar-track-piece, .docked-annotations::-webkit-scrollbar-track-piece { background: transparent; border: 0; }
   .app-shell::-webkit-scrollbar-thumb, .canvas-list::-webkit-scrollbar-thumb, .messages::-webkit-scrollbar-thumb, .docked-annotations::-webkit-scrollbar-thumb { border-radius: 999px; background: rgb(120 113 108 / .42); }
   .app-shell::-webkit-scrollbar-button, .canvas-list::-webkit-scrollbar-button, .messages::-webkit-scrollbar-button, .docked-annotations::-webkit-scrollbar-button { display: none; width: 0; height: 0; }
   .app-shell.left-collapsed { grid-template-columns: 0 minmax(0, 1fr) var(--right-panel-width, 360px); } .app-shell.right-collapsed { grid-template-columns: var(--left-panel-width, 340px) minmax(0, 1fr) 0; }

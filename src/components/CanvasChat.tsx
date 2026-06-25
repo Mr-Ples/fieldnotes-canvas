@@ -1,6 +1,6 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState, type KeyboardEvent, type MouseEvent as ReactMouseEvent } from 'react'
 import { createPortal } from 'react-dom'
-import { BookmarkPlus, Check, ExternalLink, Forward, Link2, Lock, MessageCircleReply, MoreHorizontal, Paperclip, RefreshCw, Send, Settings, Smile, SmilePlus, Trash2, Unplug, UserCheck, UserPlus } from 'lucide-react'
+import { BookmarkPlus, Check, ExternalLink, Forward, Link2, Lock, MessageCircleReply, MoreVertical, Paperclip, RefreshCw, Send, Settings, Smile, SmilePlus, Trash2, Unplug, UserCheck, UserPlus } from 'lucide-react'
 import { Virtuoso, type VirtuosoHandle } from 'react-virtuoso'
 import { getDeviceId, getGuestName, getOwnerToken, setGuestName as saveGuestName } from '../services/api'
 import DiscordConnectModal from './DiscordConnectModal'
@@ -470,7 +470,7 @@ export default function CanvasChat() {
             left: Math.max(8, Math.min(window.innerWidth - width - 8, rect.right - width)),
             top: Math.max(8, Math.min(window.innerHeight - height - 8, rect.bottom + 6)),
           })
-        }}><MoreHorizontal size={16} /></button>
+        }}><MoreVertical size={16} /></button>
       </div>
     </div>
     <Virtuoso ref={list} className={'min-h-0 flex-1 ' + (linkReady ? '' : 'invisible')} data={messages} followOutput={false} rangeChanged={(range) => chatScrollPositions.set(canvas.id, range.startIndex)} itemContent={(_, message) => {
@@ -481,7 +481,7 @@ export default function CanvasChat() {
           {canWrite && <button className="grid size-7 place-items-center rounded border-0 bg-transparent text-stone-500 hover:bg-stone-100" title="More reactions" onClick={(event) => togglePopover('emoji', message, event)}><SmilePlus size={14} /></button>}
           {canWrite && <button className="grid size-7 place-items-center rounded border-0 bg-transparent text-stone-500 hover:bg-stone-100" title="Reply" onClick={() => setReplyTo(message)}><MessageCircleReply size={14} /></button>}
           <button className="grid size-7 place-items-center rounded border-0 bg-transparent text-stone-500 hover:bg-stone-100" title="Forward" onClick={() => void forwardMessage(message)}><Forward size={14} /></button>
-          <button className="grid size-7 place-items-center rounded border-0 bg-transparent text-stone-500 hover:bg-stone-100" title="More" onClick={(event) => togglePopover('more', message, event)}><MoreHorizontal size={15} /></button>
+          <button className="grid size-7 place-items-center rounded border-0 bg-transparent text-stone-500 hover:bg-stone-100" title="More" onClick={(event) => togglePopover('more', message, event)}><MoreVertical size={15} /></button>
         </div>
         {parent && <span aria-hidden="true" className="pointer-events-none absolute left-[25px] top-4 h-[14px] w-[31px] rounded-tl-xl border-l-2 border-t-2 border-stone-300" />}
         {parent && <button className="relative z-10 mb-0.5 ml-9 flex max-w-[calc(100%-2.25rem)] items-center gap-1.5 truncate border-0 bg-transparent p-0 text-left text-[9px] text-stone-400 hover:text-stone-600" onClick={() => jumpToMessage(parent.id)}>{parent.authorAvatar ? <span className="relative z-20 grid size-4 place-items-center rounded-full bg-paper"><img className="size-4 rounded-full" src={parent.authorAvatar} alt="" /></span> : <span className="relative z-20 grid size-4 place-items-center rounded-full bg-stone-200 text-[6px]">{parent.authorName.slice(0, 2).toUpperCase()}</span>}<strong>{parent.authorName}</strong><span className="truncate">{parent.content || 'Attachment'}</span></button>}
