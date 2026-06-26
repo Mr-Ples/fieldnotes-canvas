@@ -269,7 +269,8 @@
   .comment-reply-target button { @apply absolute top-1.5 right-1.5 grid size-6 place-items-center rounded-md bg-transparent p-0 text-stone-400 hover:bg-stone-200 hover:text-ink; }
   .avatar { @apply grid size-7 shrink-0 place-items-center !z-10 rounded-full text-[9px] font-bold; }
   .avatar-sage { @apply bg-emerald-100 text-emerald-900; } .avatar-clay { @apply bg-orange-100 text-orange-900; } .avatar-ink { @apply bg-forest text-white; }
-  .comment { @apply py-3; } .comment-body { @apply flex-1; }
+  .comment { @apply py-3 transition-colors; } .comment-body { @apply flex-1; }
+  .comment.is-reply-target { @apply -mx-2 rounded-lg bg-amber-50 px-2 ring-1 ring-amber-300; }
   .comment-meta { @apply flex items-center gap-2 text-[10px]; }
   .comment-body time { @apply text-[9px] text-stone-400; }
   .comment-body p { @apply my-1 font-serif text-[13px] leading-relaxed text-stone-600; }
