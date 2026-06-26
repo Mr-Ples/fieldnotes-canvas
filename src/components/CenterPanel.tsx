@@ -8,7 +8,7 @@ import DiscordIdentity, { signOutDiscord, type DiscordUser } from './DiscordIden
 import AnnotationLayer from './AnnotationLayer'
 import LinkPreviewLayer from './LinkPreviewLayer'
 import { showConfirm, showPrompt, showToast } from './Popups'
-import { getOwnerToken } from '../services/api'
+import { getDeviceId, getGuestName, getOwnerToken } from '../services/api'
 import { getCollaborationSettings, saveCollaborationSettings, type AccessMode, type CollaborationSettings } from '../services/collaboration'
 import { deepLinkKind, deepLinkTarget, linkKindForHref, navigateToDeepLink, scrollDeepLinkIntoView } from '../services/deepLinks'
 import { decorateEditorLinks } from '../services/linkContent'
@@ -709,21 +709,39 @@ function Resources({ canInteract }: { canInteract: boolean }) {
 
 function Comments({ canInteract, canSaveResource }: { canInteract: boolean; canSaveResource: boolean }) {
   const [text, setText] = useState('')
+  const [replyTarget, setReplyTarget] = useState<Comment | null>(null)
   const [items, setItems] = useLocalStorage('fieldnotes:comments', comments)
   const [identity, setIdentity] = useState<{ id: string; displayName: string; avatar?: string } | null>(null)
+  const composeRef = useRef<HTMLTextAreaElement>(null)
   useEffect(() => {
     void fetch('/api/discord/me').then((response) => response.ok ? response.json() : null).then((result: { user?: { id: string; displayName: string; avatar?: string } } | null) => setIdentity(result?.user ?? null)).catch(() => {})
     const sync = (event: Event) => setIdentity((event as CustomEvent<{ id: string; displayName: string; avatar?: string } | null>).detail)
     window.addEventListener('fieldnotes:discord-auth-synced', sync)
     return () => window.removeEventListener('fieldnotes:discord-auth-synced', sync)
   }, [])
-  const currentAuthor = identity?.displayName ?? 'You'
+  const currentAuthor = identity?.displayName ?? getGuestName()
+  const currentAuthorId = identity?.id ?? `guest:${getDeviceId()}`
   const currentInitials = currentAuthor.split(/\s+/).map((part) => part[0]).join('').slice(0, 2).toUpperCase() || 'YO'
-  const add = () => { if (!text.trim()) return; setItems([...items, { id: `comment-${crypto.randomUUID()}`, author: currentAuthor, authorId: identity?.id, avatar: identity?.avatar, initials: currentInitials, time: 'Now', body: text.trim() }]); setText('') }
+  const currentAvatar = identity?.avatar
+  const add = () => {
+    if (!text.trim()) return
+    const comment: Comment = {
+      id: `${replyTarget ? 'reply' : 'comment'}-${crypto.randomUUID()}`,
+      author: currentAuthor,
+      authorId: currentAuthorId,
+      avatar: currentAvatar,
+      initials: currentInitials,
+      time: 'Now',
+      body: text.trim(),
+    }
+    setItems(replyTarget ? insertReply(items, replyTarget.id, comment) : [...items, comment])
+    setText('')
+    setReplyTarget(null)
+  }
   const saveAsResource = (comment: Comment) => {
     const key = 'fieldnotes:resources'
     const current = JSON.parse(localStorage.getItem(key) ?? JSON.stringify(resources)) as unknown[]
-    const content = [comment.body, ...(comment.replies ?? []).map((reply) => `${reply.author}: ${reply.body}`)].join('\n\n')
+    const content = flattenCommentThread(comment).map((entry) => `${entry.author}: ${entry.body}`).join('\n\n')
     localStorage.setItem(key, JSON.stringify([{ id: `res-comment-${crypto.randomUUID()}`, kind: 'chat', title: `Comment from ${comment.author}`, meta: `Comment · Saved ${new Date().toLocaleDateString()}`, accent: '#5865f2', content }, ...current]))
     window.dispatchEvent(new Event('fieldnotes:resources-changed'))
     showToast('Saved to resources')
@@ -734,23 +752,61 @@ function Comments({ canInteract, canSaveResource }: { canInteract: boolean; canS
       add()
     }
   }
-  const reply = (id: string) => {
+  const reply = (comment: Comment) => {
+    setReplyTarget(comment)
+    requestAnimationFrame(() => composeRef.current?.focus())
+  }
+  const copyLink = async (id: string) => {
+    const url = new URL(window.location.href)
+    url.hash = id
+    await navigator.clipboard.writeText(url.toString())
+    showToast('Link copied')
+  }
+  const remove = (id: string) => {
     void (async () => {
-      const body = await showPrompt({ title: 'Reply', message: 'Write a reply.', placeholder: 'Reply…', confirmLabel: 'Reply' })
-      if (!body) return
-      const nested = { id: `reply-${crypto.randomUUID()}`, author: currentAuthor, authorId: identity?.id, avatar: identity?.avatar, initials: currentInitials, time: 'Now', body: body.trim() }
-      setItems(items.map((item) => item.id === id ? { ...item, replies: [...(item.replies ?? []), nested] } : item))
+      if (!await showConfirm({ title: 'Delete message?', message: 'This removes the message and its replies from the discussion.', confirmLabel: 'Delete', tone: 'danger' })) return
+      setItems(removeComment(items, id))
     })()
   }
-  const remove = (id: string) => setItems(items.flatMap((item) => item.id === id ? [] : [{ ...item, replies: item.replies?.filter((replyItem) => replyItem.id !== id) }]))
   return <section className="comments-section"><div className="section-title"><h2>Discussion <span>{items.length}</span></h2></div>
-    {canInteract && <div className="comment-compose"><Avatar initials={currentInitials} src={identity?.avatar} name={currentAuthor} color="ink"/><div><textarea value={text} onChange={(event) => setText(event.target.value)} onKeyDown={handleKeyDown} placeholder="Add to the discussion…"/><button onClick={add} disabled={!text.trim()}><Send size={14}/> Comment</button></div></div>}
-    {items.map((comment) => <CommentItem key={comment.id} comment={comment} currentUserId={identity?.id} currentName={currentAuthor} currentAvatar={identity?.avatar} canInteract={canInteract} canSaveResource={canSaveResource} onReply={reply} onSave={saveAsResource} onDelete={remove}/>)}</section>
+    <div className="comment-list">{items.map((comment) => <CommentItem key={comment.id} comment={comment} currentUserId={currentAuthorId} currentName={currentAuthor} canInteract={canInteract} canSaveResource={canSaveResource} onReply={reply} onSave={saveAsResource} onCopy={(id) => void copyLink(id)} onDelete={remove}/>)}</div>
+    {canInteract && <div className="comment-compose"><Avatar initials={currentInitials} src={currentAvatar} name={currentAuthor} color="ink"/><div>{replyTarget && <div className="comment-reply-target"><span>Replying to {displayCommentAuthor(replyTarget, currentAuthorId, currentAuthor)}</span><blockquote>{replyTarget.body}</blockquote><button onClick={() => setReplyTarget(null)} aria-label="Cancel reply"><X size={13}/></button></div>}<textarea ref={composeRef} value={text} onChange={(event) => setText(event.target.value)} onKeyDown={handleKeyDown} placeholder={replyTarget ? 'Write a reply…' : 'Add to the discussion…'}/><button onClick={add} disabled={!text.trim()}><Send size={14}/> {replyTarget ? 'Reply' : 'Comment'}</button></div></div>}
+  </section>
 }
 
-function CommentItem({ comment, currentUserId, currentName, currentAvatar, canInteract, canSaveResource, onReply, onSave, onDelete }: { comment: Comment; currentUserId?: string; currentName: string; currentAvatar?: string; canInteract: boolean; canSaveResource: boolean; onReply: (id: string) => void; onSave: (comment: Comment) => void; onDelete: (id: string) => void }) {
-  const mine = comment.author === 'You' || Boolean(currentUserId && comment.authorId === currentUserId)
-  const shownName = mine && comment.author === 'You' && currentUserId ? currentName : comment.author
-  const shownAvatar = mine && comment.author === 'You' ? currentAvatar : comment.avatar
-  return <article className="comment deep-link-target" id={comment.id}><Avatar initials={comment.initials} src={shownAvatar} name={shownName} color={mine ? 'ink' : 'clay'}/><div className="comment-body"><div><strong>{shownName}</strong><time>{comment.time}</time></div><p>{comment.body}</p><div className="comment-actions">{canInteract && <button onClick={() => onReply(comment.id)}><Reply size={13}/> Reply</button>}{canSaveResource && <button onClick={() => onSave(comment)}><FileText size={13} /> Save as resource</button>}<CopyLinkButton target={comment.id}/>{canInteract && mine && <button className="text-red-700" onClick={() => onDelete(comment.id)}><Trash2 size={13}/> Delete</button>}</div>{comment.replies?.map((reply) => <CommentItem key={reply.id} comment={reply} currentUserId={currentUserId} currentName={currentName} currentAvatar={currentAvatar} canInteract={canInteract} canSaveResource={canSaveResource} onReply={onReply} onSave={onSave} onDelete={onDelete}/>)}</div></article>
+function CommentItem({ comment, currentUserId, currentName, canInteract, canSaveResource, onReply, onSave, onCopy, onDelete }: { comment: Comment; currentUserId: string; currentName: string; canInteract: boolean; canSaveResource: boolean; onReply: (comment: Comment) => void; onSave: (comment: Comment) => void; onCopy: (id: string) => void; onDelete: (id: string) => void }) {
+  const [menuOpen, setMenuOpen] = useState(false)
+  const [collapsed, setCollapsed] = useState(false)
+  const menuRef = useRef<HTMLDivElement>(null)
+  useEffect(() => {
+    if (!menuOpen) return
+    const close = (event: PointerEvent) => { if (!menuRef.current?.contains(event.target as Node)) setMenuOpen(false) }
+    window.addEventListener('pointerdown', close)
+    return () => window.removeEventListener('pointerdown', close)
+  }, [menuOpen])
+  const mine = comment.author === 'You' || comment.authorId === currentUserId
+  const shownName = displayCommentAuthor(comment, currentUserId, currentName)
+  const choose = (action: () => void) => { action(); setMenuOpen(false) }
+  const replyCount = countReplies(comment)
+  return <article className={`comment deep-link-target ${collapsed ? 'is-collapsed' : ''}`} id={comment.id}><Avatar initials={comment.initials} src={comment.avatar} name={shownName} color={mine ? 'ink' : 'clay'}/><div className="comment-body"><div className="comment-meta"><strong>{shownName}</strong><time>{comment.time}</time><div className="comment-menu" ref={menuRef}><button aria-label="Comment options" aria-expanded={menuOpen} onClick={() => setMenuOpen((open) => !open)}><MoreVertical size={15}/></button>{menuOpen && <div role="menu"><button role="menuitem" onClick={() => choose(() => onCopy(comment.id))}><Link2 size={13}/> Copy link</button>{canSaveResource && <button role="menuitem" onClick={() => choose(() => onSave(comment))}><FileText size={13} /> Save as resource</button>}{canInteract && mine && <button role="menuitem" className="danger" onClick={() => choose(() => onDelete(comment.id))}><Trash2 size={13}/> Delete</button>}</div>}</div></div><p>{comment.body}</p><div className="comment-actions">{canInteract && <button onClick={() => onReply(comment)}><Reply size={13}/> Reply</button>}{collapsed && replyCount > 0 && <button className="comment-collapse-chip" onClick={() => setCollapsed(false)}>Show more replies ({replyCount})</button>}</div>{Boolean(comment.replies?.length) && <div className="comment-thread"><button className="comment-thread-rail" onClick={() => setCollapsed((value) => !value)} aria-label={collapsed ? 'Expand replies' : 'Collapse replies'} title={collapsed ? 'Expand replies' : 'Collapse replies'}/>{!collapsed && <div className="comment-thread-items">{comment.replies?.map((reply) => <CommentItem key={reply.id} comment={reply} currentUserId={currentUserId} currentName={currentName} canInteract={canInteract} canSaveResource={canSaveResource} onReply={onReply} onSave={onSave} onCopy={onCopy} onDelete={onDelete}/>)}</div>}</div>}</div></article>
+}
+
+function displayCommentAuthor(comment: Comment, currentUserId: string, currentName: string) {
+  return comment.author === 'You' || comment.authorId === currentUserId ? currentName : comment.author
+}
+
+function insertReply(items: Comment[], targetId: string, reply: Comment): Comment[] {
+  return items.map((item) => item.id === targetId ? { ...item, replies: [...(item.replies ?? []), reply] } : { ...item, replies: item.replies ? insertReply(item.replies, targetId, reply) : undefined })
+}
+
+function removeComment(items: Comment[], targetId: string): Comment[] {
+  return items.flatMap((item) => item.id === targetId ? [] : [{ ...item, replies: item.replies ? removeComment(item.replies, targetId) : undefined }])
+}
+
+function flattenCommentThread(comment: Comment): Comment[] {
+  return [comment, ...(comment.replies ?? []).flatMap(flattenCommentThread)]
+}
+
+function countReplies(comment: Comment): number {
+  return (comment.replies ?? []).reduce((total, reply) => total + 1 + countReplies(reply), 0)
 }
